@@ -1,0 +1,7 @@
+{
+  "name": "Cleaning Service Pro ERP",
+  "description": "A comprehensive service management system for water tank and pipe cleaning businesses, featuring customer management, order tracking, and service reporting with AI-powered tagging.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
