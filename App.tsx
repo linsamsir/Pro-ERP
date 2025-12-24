@@ -8,9 +8,10 @@ import ImportCenter from './components/ImportCenter';
 import JobManagement from './components/JobManagement';
 import JobList from './components/JobList';
 import JobDetail from './components/JobDetail';
+import BossDashboard from './components/BossDashboard';
 import { Customer, Job } from './types';
 
-type View = 'dashboard' | 'customers' | 'customer_add' | 'customer_edit' | 'jobs' | 'job_add' | 'job_edit' | 'job_view' | 'import';
+type View = 'dashboard' | 'boss_dashboard' | 'customers' | 'customer_add' | 'customer_edit' | 'jobs' | 'job_add' | 'job_edit' | 'job_view' | 'import';
 
 const App: React.FC = () => {
   const [activeView, setActiveView] = React.useState<View>('dashboard');
@@ -36,6 +37,8 @@ const App: React.FC = () => {
             }}
           />
         );
+      case 'boss_dashboard':
+        return <BossDashboard />;
       case 'customers':
         return (
           <CustomerList 

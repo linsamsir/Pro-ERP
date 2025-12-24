@@ -1,10 +1,12 @@
 
-import { Customer, Job, JobStatus } from '../types';
+import { Customer, Job, JobStatus, Expense, AppSettings } from '../types';
 import { extractAiTags, getAiCooldownSeconds } from './gemini';
 
 const STORAGE_KEYS = {
   CUSTOMERS: 'erp_customers_v3',
-  JOBS: 'erp_jobs_v3'
+  JOBS: 'erp_jobs_v3',
+  EXPENSES: 'erp_expenses_v1',
+  SETTINGS: 'erp_settings_v1'
 };
 
 const getStorage = <T,>(key: string): T[] => {
@@ -14,6 +16,16 @@ const getStorage = <T,>(key: string): T[] => {
 
 const saveStorage = <T,>(key: string, data: T[]) => {
   localStorage.setItem(key, JSON.stringify(data));
+};
+
+const DEFAULT_SETTINGS: AppSettings = {
+  monthlyTarget: 150000,
+  monthlySalary: 60000, // Example default
+  consumables: {
+    citricCostPerCan: 50,
+    chemicalDrumCost: 3000,
+    chemicalDrumToBottles: 20 // derived cost ~150
+  }
 };
 
 export const db = {
@@ -100,5 +112,29 @@ export const db = {
       return jobToSave;
     },
     generateId: () => `JOB-${Date.now()}-${Math.floor(Math.random()*10000)}`
+  },
+  expenses: {
+    getAll: () => getStorage<Expense>(STORAGE_KEYS.EXPENSES),
+    save: (expense: Expense) => {
+      const list = getStorage<Expense>(STORAGE_KEYS.EXPENSES);
+      const index = list.findIndex(e => e.id === expense.id);
+      if (index >= 0) list[index] = expense;
+      else list.push(expense);
+      saveStorage(STORAGE_KEYS.EXPENSES, list);
+    },
+    delete: (id: string) => {
+      const list = getStorage<Expense>(STORAGE_KEYS.EXPENSES).filter(e => e.id !== id);
+      saveStorage(STORAGE_KEYS.EXPENSES, list);
+    },
+    generateId: () => `EXP-${Date.now()}`
+  },
+  settings: {
+    get: (): AppSettings => {
+      const data = localStorage.getItem(STORAGE_KEYS.SETTINGS);
+      return data ? { ...DEFAULT_SETTINGS, ...JSON.parse(data) } : DEFAULT_SETTINGS;
+    },
+    save: (settings: AppSettings) => {
+      localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings));
+    }
   }
 };

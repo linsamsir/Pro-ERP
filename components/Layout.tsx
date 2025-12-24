@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Home, Users, ClipboardList, Database, Menu, X, Tent } from 'lucide-react';
+import { Home, Users, ClipboardList, Database, Menu, X, Tent, Crown } from 'lucide-react';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -13,6 +13,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onNavigate }) => 
 
   const navItems = [
     { id: 'dashboard', label: '村莊地圖', icon: Home, color: 'text-orange-500' },
+    { id: 'boss_dashboard', label: '老闆戰情', icon: Crown, color: 'text-yellow-500' },
     { id: 'customers', label: '村民名冊', icon: Users, color: 'text-blue-500' },
     { id: 'jobs', label: '村莊任務', icon: ClipboardList, color: 'text-green-600' },
     { id: 'import', label: '移居中心', icon: Tent, color: 'text-purple-500' },

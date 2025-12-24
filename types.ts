@@ -198,3 +198,25 @@ export interface Job {
   waterSelfToTank?: '是' | '否' | '不確定';
   pipeResultTags?: string[];
 }
+
+// --- Dashboard v2 New Interfaces ---
+
+export interface Expense {
+  id: string;
+  date: string; // YYYY-MM-DD
+  category: 'insurance' | 'utilities' | 'phone' | 'fuel' | 'other';
+  amount: number;
+  paymentMethod?: string;
+  note?: string;
+  createdAt: string;
+}
+
+export interface AppSettings {
+  monthlyTarget: number;
+  monthlySalary: number; // Total combined salary
+  consumables: {
+    citricCostPerCan: number;
+    chemicalDrumCost: number;
+    chemicalDrumToBottles: number;
+  };
+}
