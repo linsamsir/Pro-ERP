@@ -5,8 +5,9 @@ import { Job, Customer, JobStatus, Expense, AppSettings } from '../types';
 import { 
   TrendingUp, DollarSign, Calendar, Target, AlertCircle, 
   Download, Activity, Users, Clock, Filter, CheckCircle2, XCircle,
-  Settings, Plus, ChevronDown, ChevronUp, Droplets, Briefcase, Truck, Phone, Zap, ShieldCheck, FileText, ChevronRight, Trash2
+  Settings, Plus, ChevronDown, ChevronUp, Droplets, Briefcase, Truck, Phone, Zap, ShieldCheck, FileText, ChevronRight, Trash2, MessageCircle
 } from 'lucide-react';
+import ChatExpenseModal from './ChatExpenseModal';
 
 // Types for View State
 type RangeType = 'this_month' | 'last_month' | 'last_7d' | 'last_30d' | 'custom';
@@ -37,6 +38,7 @@ const BossDashboard: React.FC = () => {
   // Modals
   const [showSettings, setShowSettings] = React.useState(false);
   const [showAddExpense, setShowAddExpense] = React.useState(false);
+  const [showChatExpense, setShowChatExpense] = React.useState(false);
   
   // --- Init & Refresh ---
   const refreshData = () => {
@@ -242,7 +244,8 @@ const BossDashboard: React.FC = () => {
         category: form.category as any,
         amount: form.amount!,
         note: form.note,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        source: 'manual_form'
       };
       db.expenses.save(newExp);
       refreshData();
@@ -310,9 +313,14 @@ const BossDashboard: React.FC = () => {
       <div className="bg-[#fffbf0] border-l-4 border-[#78b833] p-3 text-xs font-bold text-[#b59a7a] flex justify-between items-center">
          <span>統計區間：{dateRange.start.toLocaleDateString()} ~ {dateRange.end.toLocaleDateString()} ({daysInView} 天)</span>
          {activeTab === 'expenses' && (
-           <button onClick={() => setShowAddExpense(true)} className="bg-[#78b833] text-white px-3 py-1 rounded-lg flex items-center gap-1 shadow-sm active:scale-95">
-             <Plus size={14}/> 記一筆
-           </button>
+           <div className="flex gap-2">
+              <button onClick={() => setShowChatExpense(true)} className="bg-white border border-[#e8dcb9] text-[#5d4a36] px-3 py-1 rounded-lg flex items-center gap-1 shadow-sm active:scale-95">
+                <MessageCircle size={14}/> 對話輸入
+              </button>
+              <button onClick={() => setShowAddExpense(true)} className="bg-[#78b833] text-white px-3 py-1 rounded-lg flex items-center gap-1 shadow-sm active:scale-95">
+                <Plus size={14}/> 記一筆
+              </button>
+           </div>
          )}
       </div>
 
@@ -400,8 +408,8 @@ const BossDashboard: React.FC = () => {
                          filteredJobs.map(j => `${j.serviceDate},${j.contactPerson},"${j.serviceItems.join('+')}",${j.financial?.total_amount||0},${j.workDurationHours},"${j.serviceNote}"`).join('\n');
                    downloadCSV(csv, `營收_${dateRange.start.toISOString().slice(0,10)}.csv`);
                 } else if (activeTab === 'expenses') {
-                   csv = ['日期,類別,金額,備註'].join(',') + '\n' + 
-                         filteredExpenses.map(e => `${e.date},${e.category},${e.amount},"${e.note}"`).join('\n');
+                   csv = ['日期,類別,金額,備註,來源'].join(',') + '\n' + 
+                         filteredExpenses.map(e => `${e.date},${e.category},${e.amount},"${e.note}",${e.source||'manual'}`).join('\n');
                    downloadCSV(csv, `支出_${dateRange.start.toISOString().slice(0,10)}.csv`);
                 }
              }}
@@ -455,7 +463,10 @@ const BossDashboard: React.FC = () => {
                   <tr key={exp.id} className="hover:bg-red-50">
                     <td className="p-4 text-xs font-bold text-[#5d4a36] whitespace-nowrap">{exp.date}</td>
                     <td className="p-4 text-xs font-bold text-slate-500 uppercase">{exp.category === 'fuel' ? '⛽ 油資' : exp.category === 'utilities' ? '💡 水電' : exp.category === 'insurance' ? '🏥 勞健保' : exp.category === 'phone' ? '📱 電話' : '📦 雜支'}</td>
-                    <td className="p-4 text-xs text-slate-400">{exp.note}</td>
+                    <td className="p-4 text-xs text-slate-400">
+                       {exp.note}
+                       {exp.source === 'chat_input' && <span className="ml-1 inline-block text-[9px] bg-slate-100 text-slate-400 px-1 rounded">AI</span>}
+                    </td>
                     <td className="p-4 text-xs font-black text-red-400 text-right">${exp.amount.toLocaleString()}</td>
                     <td className="p-4 text-center">
                        <button onClick={() => { if(confirm('刪除此支出？')) { db.expenses.delete(exp.id); refreshData(); } }} className="text-slate-300 hover:text-red-500"><Trash2 size={14}/></button>
@@ -545,6 +556,7 @@ const BossDashboard: React.FC = () => {
 
       {showSettings && <SettingsModal />}
       {showAddExpense && <AddExpenseModal />}
+      {showChatExpense && <ChatExpenseModal onClose={() => setShowChatExpense(false)} onSaved={refreshData} />}
     </div>
   );
 };

@@ -209,6 +209,10 @@ export interface Expense {
   paymentMethod?: string;
   note?: string;
   createdAt: string;
+  
+  // Chat Input Metadata
+  source?: 'manual_form' | 'chat_input';
+  raw_input?: string;
 }
 
 export interface AppSettings {
