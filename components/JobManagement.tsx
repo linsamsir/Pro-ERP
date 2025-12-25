@@ -175,7 +175,7 @@ const JobManagement: React.FC<JobManagementProps> = ({ initialJob, initialCustom
               key={t} 
               type="button" 
               onClick={() => update({ arrival_time: t })}
-              className={`btn-option ${job.arrival_time === t ? 'active' : 'inactive'}`}
+              className={`btn-option flex-1 min-w-[80px] ${job.arrival_time === t ? 'active' : 'inactive'}`}
             >
               {t}
             </button>
@@ -183,7 +183,7 @@ const JobManagement: React.FC<JobManagementProps> = ({ initialJob, initialCustom
           <button 
             type="button"
             onClick={() => { setTempTime(job.arrival_time); setShowTimeModal(true); }}
-            className={`btn-option ${!isPreset ? 'active' : 'inactive'}`}
+            className={`btn-option flex-1 min-w-[80px] ${!isPreset ? 'active' : 'inactive'}`}
           >
             <Clock size={16} /> 
             {!isPreset ? job.arrival_time : '其他'}
@@ -232,17 +232,17 @@ const JobManagement: React.FC<JobManagementProps> = ({ initialJob, initialCustom
       <button 
         type="button" 
         onClick={() => onChange(Math.max(0, value - 0.5))}
-        className="w-10 h-10 flex items-center justify-center bg-white rounded-full shadow-sm border border-slate-100 active:scale-95 text-slate-500 hover:text-slate-800"
+        className="w-12 h-12 flex items-center justify-center bg-white rounded-full shadow-sm border border-slate-100 active:scale-95 text-slate-500 hover:text-slate-800"
       >
-        <Minus size={18} strokeWidth={3} />
+        <Minus size={20} strokeWidth={3} />
       </button>
-      <span className="font-mono font-black text-xl w-14 text-center text-[#5d4a36]">{value}</span>
+      <span className="font-mono font-black text-2xl w-14 text-center text-[#5d4a36]">{value}</span>
       <button 
         type="button" 
         onClick={() => onChange(Math.min(max, value + 0.5))}
-        className="w-10 h-10 flex items-center justify-center bg-[#78b833] text-white rounded-full shadow-sm active:scale-95 hover:bg-[#5a8d26]"
+        className="w-12 h-12 flex items-center justify-center bg-[#78b833] text-white rounded-full shadow-sm active:scale-95 hover:bg-[#5a8d26]"
       >
-        <Plus size={18} strokeWidth={3} />
+        <Plus size={20} strokeWidth={3} />
       </button>
     </div>
   );
@@ -252,7 +252,7 @@ const JobManagement: React.FC<JobManagementProps> = ({ initialJob, initialCustom
     <button 
       type="button" 
       onClick={onClick} 
-      className={`px-4 py-2.5 rounded-xl text-sm font-black border-2 transition-all ${active ? `bg-${color}-100 border-${color}-300 text-${color}-800 shadow-sm` : 'bg-white border-slate-100 text-slate-400'}`}
+      className={`px-5 py-3 rounded-xl text-base font-black border-2 transition-all ${active ? `bg-${color}-100 border-${color}-300 text-${color}-800 shadow-sm` : 'bg-white border-slate-100 text-slate-400 hover:border-slate-200'}`}
     >
       {label}
     </button>
@@ -299,7 +299,7 @@ const JobManagement: React.FC<JobManagementProps> = ({ initialJob, initialCustom
                    key={tag} 
                    type="button"
                    onClick={() => toggleTag(tag)}
-                   className={`px-3 py-2 rounded-lg text-sm font-bold border shrink-0 transition-colors ${job.subjective_tags.includes(tag) ? 'bg-orange-100 border-orange-300 text-orange-700' : 'bg-slate-50 border-slate-100 text-slate-400'}`}
+                   className={`px-4 py-2.5 rounded-xl text-sm font-bold border shrink-0 transition-colors ${job.subjective_tags.includes(tag) ? 'bg-orange-100 border-orange-300 text-orange-700' : 'bg-slate-50 border-slate-100 text-slate-400'}`}
                  >
                    {tag}
                  </button>
@@ -312,7 +312,7 @@ const JobManagement: React.FC<JobManagementProps> = ({ initialJob, initialCustom
                <div className="flex items-center gap-2 animate-in fade-in slide-in-from-left-2">
                  <input 
                    autoFocus
-                   className="input-nook py-1.5 px-3 text-sm w-32"
+                   className="input-nook py-2 px-3 text-sm w-32"
                    value={customTagInput}
                    onChange={e => setCustomTagInput(e.target.value)}
                    onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addCustomTag())}
@@ -324,7 +324,7 @@ const JobManagement: React.FC<JobManagementProps> = ({ initialJob, initialCustom
                <button 
                  type="button" 
                  onClick={() => setShowCustomTagInput(true)}
-                 className="px-3 py-2 rounded-lg text-sm font-bold border bg-white border-dashed border-slate-300 text-slate-400 hover:bg-slate-50"
+                 className="px-4 py-2.5 rounded-xl text-sm font-bold border bg-white border-dashed border-slate-300 text-slate-400 hover:bg-slate-50"
                >
                  + 其他
                </button>
@@ -334,7 +334,7 @@ const JobManagement: React.FC<JobManagementProps> = ({ initialJob, initialCustom
                  key={t}
                  type="button"
                  onClick={() => toggleTag(t)}
-                 className="px-3 py-2 rounded-lg text-sm font-bold border shrink-0 bg-orange-100 border-orange-300 text-orange-700"
+                 className="px-4 py-2.5 rounded-xl text-sm font-bold border shrink-0 bg-orange-100 border-orange-300 text-orange-700"
                >
                  {t}
                </button>
@@ -638,7 +638,7 @@ const JobManagement: React.FC<JobManagementProps> = ({ initialJob, initialCustom
               </div>
               
               {job.financial.invoice_issued && (
-                <div className="flex items-center gap-2 text-sm font-bold text-orange-500 bg-orange-50 p-3 rounded-xl border border-orange-100">
+                <div className="flex items-center gap-2 text-alert bg-orange-50 p-3 rounded-xl border border-orange-100 text-orange-500">
                   <AlertCircle size={16} /> 提醒：請確認金額是否已含稅
                 </div>
               )}

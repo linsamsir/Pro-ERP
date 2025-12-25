@@ -33,16 +33,22 @@
     .text-h2 { font-size: 22px; font-weight: 900; line-height: 1.4; color: var(--wood-brown); }
     .text-h3 { font-size: 18px; font-weight: 800; line-height: 1.4; color: var(--wood-brown); }
     .text-body { font-size: 15px; font-weight: 500; line-height: 1.6; color: var(--wood-brown); }
-    .text-note { font-size: 14px; font-weight: 700; color: #b59a7a; } /* Min readable size */
+    
+    /* Note: Minimum readable size for notes/alerts */
+    .text-note { font-size: 14px; font-weight: 700; color: #b59a7a; }
+    
+    /* Alert text must be readable */
+    .text-alert { font-size: 14px; font-weight: 700; color: #f87171; line-height: 1.5; }
+
     .text-num  { font-family: monospace; font-weight: 700; }
 
     /* --- Design System: Containers --- */
     .ac-card {
       background: var(--card-white);
-      border-radius: 1.5rem; /* Consistent Radius */
+      border-radius: 1.5rem; /* Consistent Radius 24px */
       box-shadow: 0 4px 12px -2px rgba(93, 74, 54, 0.08);
       border: 2px solid #f0f0f0;
-      padding: 1.5rem; /* Consistent Padding */
+      padding: 1.5rem; /* Consistent Padding 24px */
       position: relative;
       overflow: hidden;
     }
@@ -91,11 +97,11 @@
       box-shadow: none;
     }
 
-    /* Selection Chips / Options - Big & Clear */
+    /* Selection Chips / Options - ENLARGED for better tap targets */
     .btn-option {
-      padding: 0.75rem 1rem;
+      padding: 1rem 1.25rem; /* Increased padding */
       border-radius: 1rem;
-      font-size: 15px;
+      font-size: 16px; /* Increased font size */
       font-weight: 700;
       border-width: 2px;
       transition: all 0.2s;
@@ -103,8 +109,9 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 6px;
+      gap: 8px;
       cursor: pointer;
+      min-height: 56px; /* Minimum touch target */
     }
     .btn-option.active {
       background-color: #f0fdf4; /* Green-50 */
@@ -120,6 +127,28 @@
     .btn-option.inactive:hover {
       border-color: var(--sand-beige);
       color: var(--wood-brown);
+    }
+
+    /* Tab Button Style (Unified) */
+    .tab-btn {
+      padding: 1rem;
+      font-weight: 700;
+      color: #b59a7a;
+      border-bottom: 4px solid transparent;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 15px;
+    }
+    .tab-btn.active {
+      color: #5d4a36;
+      border-bottom-color: #78b833;
+      background-color: white;
+    }
+    .tab-btn:hover:not(.active) {
+      background-color: #fffdf5;
+      color: #5d4a36;
     }
 
     /* Animations */

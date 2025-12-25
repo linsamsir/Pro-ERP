@@ -3,8 +3,7 @@ import React from 'react';
 import { db } from '../services/db';
 import { Job, Customer, JobStatus, Expense, AppSettings, L2LaborConfig } from '../types';
 import { 
-  TrendingUp, DollarSign, Calendar, Target,
-  Download, Activity, Users, Filter, CheckCircle2, XCircle,
+  TrendingUp, DollarSign, Target, Download, Activity, Users, Filter, CheckCircle2, XCircle,
   Settings, Plus, Droplets, Zap, ShieldCheck, Trash2, MessageCircle, HardHat, Package
 } from 'lucide-react';
 import ChatExpenseModal from './ChatExpenseModal';
@@ -22,26 +21,27 @@ interface DateRange {
 // --- Extracted Components ---
 
 interface UnifiedSettingsModalProps {
-  settings: AppSettings;
-  setSettings: React.Dispatch<React.SetStateAction<AppSettings>>;
-  l2Labor: L2LaborConfig;
-  setL2Labor: React.Dispatch<React.SetStateAction<L2LaborConfig>>;
+  initialSettings: AppSettings;
+  initialLabor: L2LaborConfig;
   onClose: () => void;
-  onSave: () => void;
+  onSave: (newSettings: AppSettings, newLabor: L2LaborConfig) => void;
 }
 
 const UnifiedSettingsModal: React.FC<UnifiedSettingsModalProps> = ({ 
-  settings, setSettings, l2Labor, setL2Labor, onClose, onSave 
+  initialSettings, initialLabor, onClose, onSave 
 }) => {
   const [tab, setTab] = React.useState<'general' | 'consumables' | 'labor'>('general');
+  const [localSettings, setLocalSettings] = React.useState<AppSettings>(initialSettings);
+  const [localLabor, setLocalLabor] = React.useState<L2LaborConfig>(initialLabor);
 
-  // Sync settings.monthlySalary with L2 labor changes
-  React.useEffect(() => {
-    setSettings(s => ({
-        ...s,
-        monthlySalary: l2Labor.bossSalary + l2Labor.partnerSalary + l2Labor.insuranceCost
-    }));
-  }, [l2Labor, setSettings]);
+  const handleSaveClick = () => {
+    // Sync Labor to Settings.monthlySalary just before saving
+    const finalSettings = {
+        ...localSettings,
+        monthlySalary: localLabor.bossSalary + localLabor.partnerSalary + localLabor.insuranceCost
+    };
+    onSave(finalSettings, localLabor);
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-pop">
@@ -56,32 +56,32 @@ const UnifiedSettingsModal: React.FC<UnifiedSettingsModalProps> = ({
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-2 mb-6 border-b border-slate-100 pb-2">
-           <button onClick={() => setTab('general')} className={`pb-2 text-body font-bold transition-colors ${tab==='general' ? 'text-[#78b833] border-b-4 border-[#78b833]' : 'text-slate-400'}`}>基本目標</button>
-           <button onClick={() => setTab('consumables')} className={`pb-2 text-body font-bold transition-colors ${tab==='consumables' ? 'text-[#78b833] border-b-4 border-[#78b833]' : 'text-slate-400'}`}>耗材成本</button>
-           <button onClick={() => setTab('labor')} className={`pb-2 text-body font-bold transition-colors ${tab==='labor' ? 'text-[#78b833] border-b-4 border-[#78b833]' : 'text-slate-400'}`}>人力設定 (L2)</button>
+        <div className="flex gap-2 mb-6 border-b border-slate-100 pb-2 overflow-x-auto">
+           <button onClick={() => setTab('general')} className={`pb-2 text-body font-bold whitespace-nowrap transition-colors border-b-4 ${tab==='general' ? 'text-[#78b833] border-[#78b833]' : 'text-slate-400 border-transparent'}`}>基本目標</button>
+           <button onClick={() => setTab('consumables')} className={`pb-2 text-body font-bold whitespace-nowrap transition-colors border-b-4 ${tab==='consumables' ? 'text-[#78b833] border-[#78b833]' : 'text-slate-400 border-transparent'}`}>耗材成本</button>
+           <button onClick={() => setTab('labor')} className={`pb-2 text-body font-bold whitespace-nowrap transition-colors border-b-4 ${tab==='labor' ? 'text-[#78b833] border-[#78b833]' : 'text-slate-400 border-transparent'}`}>人力設定 (L2)</button>
         </div>
         
         <div className="space-y-6 overflow-y-auto flex-1 p-2">
           {tab === 'general' && (
-              <div className="space-y-4">
+              <div className="space-y-4 animate-pop">
                   <div>
                       <label className="text-note mb-1 block">每月營收目標 (元)</label>
-                      <input type="number" className="input-nook" value={settings.monthlyTarget} onChange={e => setSettings({...settings, monthlyTarget: parseInt(e.target.value)||0})} />
+                      <input type="number" className="input-nook" value={localSettings.monthlyTarget} onChange={e => setLocalSettings({...localSettings, monthlyTarget: parseInt(e.target.value)||0})} />
                   </div>
-                  <div className="bg-orange-50 p-4 rounded-xl text-sm text-orange-700 font-bold border border-orange-100 flex gap-2">
-                      <Target size={20} className="shrink-0"/>
+                  <div className="bg-orange-50 p-4 rounded-xl text-alert font-bold border border-orange-100 flex gap-2 items-start">
+                      <Target size={20} className="shrink-0 mt-0.5 text-orange-500"/>
                       設定目標後，戰情室會自動計算每日需達成的金額。
                   </div>
               </div>
           )}
 
           {tab === 'consumables' && (
-              <div className="space-y-4">
+              <div className="space-y-4 animate-pop">
                   <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200">
                       <div className="text-body font-bold mb-3 flex items-center gap-2"><Droplets size={18}/> 檸檬酸設定</div>
                       <label className="text-note mb-1 block">每罐平均成本</label>
-                      <input type="number" className="input-nook" value={settings.consumables.citricCostPerCan} onChange={e => setSettings({...settings, consumables: {...settings.consumables, citricCostPerCan: parseInt(e.target.value)||0}})} />
+                      <input type="number" className="input-nook" value={localSettings.consumables.citricCostPerCan} onChange={e => setLocalSettings({...localSettings, consumables: {...localSettings.consumables, citricCostPerCan: parseInt(e.target.value)||0}})} />
                   </div>
                   
                   <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200">
@@ -89,41 +89,41 @@ const UnifiedSettingsModal: React.FC<UnifiedSettingsModalProps> = ({
                       <div className="grid grid-cols-2 gap-3">
                           <div>
                               <label className="text-note mb-1 block">每桶進價</label>
-                              <input type="number" className="input-nook" value={settings.consumables.chemicalDrumCost} onChange={e => setSettings({...settings, consumables: {...settings.consumables, chemicalDrumCost: parseInt(e.target.value)||0}})} />
+                              <input type="number" className="input-nook" value={localSettings.consumables.chemicalDrumCost} onChange={e => setLocalSettings({...localSettings, consumables: {...localSettings.consumables, chemicalDrumCost: parseInt(e.target.value)||0}})} />
                           </div>
                           <div>
                               <label className="text-note mb-1 block">每桶分裝罐數</label>
-                              <input type="number" className="input-nook" value={settings.consumables.chemicalDrumToBottles} onChange={e => setSettings({...settings, consumables: {...settings.consumables, chemicalDrumToBottles: parseInt(e.target.value)||0}})} />
+                              <input type="number" className="input-nook" value={localSettings.consumables.chemicalDrumToBottles} onChange={e => setLocalSettings({...localSettings, consumables: {...localSettings.consumables, chemicalDrumToBottles: parseInt(e.target.value)||0}})} />
                           </div>
                       </div>
                       <div className="text-right text-note mt-2 text-orange-500">
-                          = 平均每罐成本 ${Math.round(settings.consumables.chemicalDrumCost / settings.consumables.chemicalDrumToBottles)}
+                          = 平均每罐成本 ${Math.round(localSettings.consumables.chemicalDrumCost / localSettings.consumables.chemicalDrumToBottles)}
                       </div>
                   </div>
               </div>
           )}
 
           {tab === 'labor' && (
-              <div className="space-y-4">
+              <div className="space-y-4 animate-pop">
                   <div className="p-4 bg-blue-50 rounded-2xl border border-blue-100">
                       <h4 className="text-body font-bold text-blue-800 mb-4 flex items-center gap-2"><HardHat size={18}/> 固定月薪 (用於成本攤提)</h4>
                       <div className="space-y-3">
                           <div>
                               <label className="text-note mb-1 block">老闆月薪</label>
-                              <input type="number" className="input-nook" value={l2Labor.bossSalary} onChange={e => setL2Labor({...l2Labor, bossSalary: parseInt(e.target.value)||0})} />
+                              <input type="number" className="input-nook" value={localLabor.bossSalary} onChange={e => setLocalLabor({...localLabor, bossSalary: parseInt(e.target.value)||0})} />
                           </div>
                           <div>
                               <label className="text-note mb-1 block">闆娘月薪</label>
-                              <input type="number" className="input-nook" value={l2Labor.partnerSalary} onChange={e => setL2Labor({...l2Labor, partnerSalary: parseInt(e.target.value)||0})} />
+                              <input type="number" className="input-nook" value={localLabor.partnerSalary} onChange={e => setLocalLabor({...localLabor, partnerSalary: parseInt(e.target.value)||0})} />
                           </div>
                           <div>
                               <label className="text-note mb-1 block">勞健保總負擔</label>
-                              <input type="number" className="input-nook" value={l2Labor.insuranceCost} onChange={e => setL2Labor({...l2Labor, insuranceCost: parseInt(e.target.value)||0})} />
+                              <input type="number" className="input-nook" value={localLabor.insuranceCost} onChange={e => setLocalLabor({...localLabor, insuranceCost: parseInt(e.target.value)||0})} />
                           </div>
                       </div>
                       <div className="mt-4 pt-4 border-t border-blue-200 flex justify-between items-center">
-                          <span className="text-note">每月總固定支出</span>
-                          <span className="text-h3 text-blue-900">${(l2Labor.bossSalary + l2Labor.partnerSalary + l2Labor.insuranceCost).toLocaleString()}</span>
+                          <span className="text-note text-blue-600">每月總固定支出</span>
+                          <span className="text-h3 text-blue-900">${(localLabor.bossSalary + localLabor.partnerSalary + localLabor.insuranceCost).toLocaleString()}</span>
                       </div>
                   </div>
               </div>
@@ -131,7 +131,7 @@ const UnifiedSettingsModal: React.FC<UnifiedSettingsModalProps> = ({
         </div>
         
         <button 
-          onClick={onSave}
+          onClick={handleSaveClick}
           className="w-full mt-6 btn-primary"
         >
           儲存所有設定
@@ -361,12 +361,9 @@ const BossDashboard: React.FC = () => {
     document.body.removeChild(link);
   };
 
-  const handleSettingsSave = () => {
-    // Save L1
-    db.settings.save(settings);
-    // Save L2
-    db.l2.labor.save(l2Labor);
-    
+  const handleSettingsSave = (newSettings: AppSettings, newLabor: L2LaborConfig) => {
+    db.settings.save(newSettings);
+    db.l2.labor.save(newLabor);
     setShowSettings(false);
     refreshData();
   };
@@ -457,7 +454,7 @@ const BossDashboard: React.FC = () => {
                </div>
             </div>
             {dateRange.type === 'this_month' && gapToTarget > 0 && (
-               <div className="mt-3 text-sm text-slate-400 font-bold bg-slate-50 p-2 rounded-lg">
+               <div className="mt-3 text-alert font-bold bg-slate-50 p-2 rounded-lg text-orange-500">
                   剩 {remainingDays} 天，每天需做 <span className="font-black text-[#5d4a36]">${dailyNeeded.toLocaleString()}</span>
                </div>
             )}
@@ -477,8 +474,8 @@ const BossDashboard: React.FC = () => {
              <button 
                key={tab.id}
                onClick={() => setActiveTab(tab.id as TabType)}
-               className={`flex-1 min-w-[120px] py-5 font-bold text-body flex items-center justify-center gap-2 transition-colors border-b-4 ${
-                 activeTab === tab.id ? 'bg-white text-[#5d4a36] border-[#78b833]' : 'text-[#b59a7a] border-transparent hover:bg-[#fffdf5]'
+               className={`flex-1 min-w-[140px] tab-btn justify-center ${
+                 activeTab === tab.id ? 'active' : ''
                }`}
              >
                <tab.icon size={18}/> {tab.label}
@@ -615,7 +612,7 @@ const BossDashboard: React.FC = () => {
 
           {activeTab === 'rfm' && (
              <div className="p-0">
-               <div className="p-6 bg-orange-50 border-b border-orange-100 text-sm font-bold text-orange-600 flex gap-2">
+               <div className="p-6 bg-orange-50 border-b border-orange-100 text-alert font-bold text-orange-600 flex gap-2">
                   <ShieldCheck size={18}/> 顯示累積消費最高的 Top 10 客戶（全時期統計）
                </div>
                <table className="w-full text-left border-collapse">
@@ -649,10 +646,8 @@ const BossDashboard: React.FC = () => {
       </div>
 
       {showSettings && <UnifiedSettingsModal 
-        settings={settings}
-        setSettings={setSettings}
-        l2Labor={l2Labor}
-        setL2Labor={setL2Labor}
+        initialSettings={settings}
+        initialLabor={l2Labor}
         onClose={() => setShowSettings(false)}
         onSave={handleSettingsSave}
       />}
