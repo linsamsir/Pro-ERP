@@ -1,12 +1,14 @@
 
-import { Customer, Job, JobStatus, Expense, AppSettings } from '../types';
+import { Customer, Job, JobStatus, Expense, AppSettings, Asset, ConsumableLog } from '../types';
 import { extractAiTags, getAiCooldownSeconds } from './gemini';
 
 const STORAGE_KEYS = {
   CUSTOMERS: 'erp_customers_v3',
   JOBS: 'erp_jobs_v3',
   EXPENSES: 'erp_expenses_v1',
-  SETTINGS: 'erp_settings_v1'
+  SETTINGS: 'erp_settings_v1',
+  ASSETS: 'erp_assets_v1',          // Level 2
+  CONSUMABLE_LOGS: 'erp_stock_v1'   // Level 2
 };
 
 const getStorage = <T,>(key: string): T[] => {
@@ -21,6 +23,7 @@ const saveStorage = <T,>(key: string, data: T[]) => {
 const DEFAULT_SETTINGS: AppSettings = {
   monthlyTarget: 150000,
   monthlySalary: 60000, // Example default
+  laborBreakdown: { bossSalary: 30000, partnerSalary: 30000 },
   consumables: {
     citricCostPerCan: 50,
     chemicalDrumCost: 3000,
@@ -136,5 +139,36 @@ export const db = {
     save: (settings: AppSettings) => {
       localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings));
     }
+  },
+  // --- Level 2 Modules ---
+  assets: {
+    getAll: () => getStorage<Asset>(STORAGE_KEYS.ASSETS),
+    save: (asset: Asset) => {
+      const list = getStorage<Asset>(STORAGE_KEYS.ASSETS);
+      const index = list.findIndex(a => a.id === asset.id);
+      if (index >= 0) list[index] = asset;
+      else list.push(asset);
+      saveStorage(STORAGE_KEYS.ASSETS, list);
+    },
+    delete: (id: string) => {
+      const list = getStorage<Asset>(STORAGE_KEYS.ASSETS).filter(a => a.id !== id);
+      saveStorage(STORAGE_KEYS.ASSETS, list);
+    },
+    generateId: () => `AST-${Date.now()}`
+  },
+  stock: {
+    getAll: () => getStorage<ConsumableLog>(STORAGE_KEYS.CONSUMABLE_LOGS),
+    save: (log: ConsumableLog) => {
+      const list = getStorage<ConsumableLog>(STORAGE_KEYS.CONSUMABLE_LOGS);
+      const index = list.findIndex(l => l.id === log.id);
+      if (index >= 0) list[index] = log;
+      else list.push(log);
+      saveStorage(STORAGE_KEYS.CONSUMABLE_LOGS, list);
+    },
+    delete: (id: string) => {
+      const list = getStorage<ConsumableLog>(STORAGE_KEYS.CONSUMABLE_LOGS).filter(l => l.id !== id);
+      saveStorage(STORAGE_KEYS.CONSUMABLE_LOGS, list);
+    },
+    generateId: () => `STK-${Date.now()}`
   }
 };

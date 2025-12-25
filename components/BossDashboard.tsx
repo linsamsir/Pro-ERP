@@ -5,9 +5,10 @@ import { Job, Customer, JobStatus, Expense, AppSettings } from '../types';
 import { 
   TrendingUp, DollarSign, Calendar, Target, AlertCircle, 
   Download, Activity, Users, Clock, Filter, CheckCircle2, XCircle,
-  Settings, Plus, ChevronDown, ChevronUp, Droplets, Briefcase, Truck, Phone, Zap, ShieldCheck, FileText, ChevronRight, Trash2, MessageCircle
+  Settings, Plus, ChevronDown, ChevronUp, Droplets, Briefcase, Truck, Phone, Zap, ShieldCheck, FileText, ChevronRight, Trash2, MessageCircle, PieChart
 } from 'lucide-react';
 import ChatExpenseModal from './ChatExpenseModal';
+import CostAnalysisModule from './CostAnalysisModule';
 
 // Types for View State
 type RangeType = 'this_month' | 'last_month' | 'last_7d' | 'last_30d' | 'custom';
@@ -39,6 +40,7 @@ const BossDashboard: React.FC = () => {
   const [showSettings, setShowSettings] = React.useState(false);
   const [showAddExpense, setShowAddExpense] = React.useState(false);
   const [showChatExpense, setShowChatExpense] = React.useState(false);
+  const [showLevel2Cost, setShowLevel2Cost] = React.useState(false); // Level 2 Toggle
   
   // --- Init & Refresh ---
   const refreshData = () => {
@@ -312,16 +314,21 @@ const BossDashboard: React.FC = () => {
 
       <div className="bg-[#fffbf0] border-l-4 border-[#78b833] p-3 text-xs font-bold text-[#b59a7a] flex justify-between items-center">
          <span>統計區間：{dateRange.start.toLocaleDateString()} ~ {dateRange.end.toLocaleDateString()} ({daysInView} 天)</span>
-         {activeTab === 'expenses' && (
-           <div className="flex gap-2">
-              <button onClick={() => setShowChatExpense(true)} className="bg-white border border-[#e8dcb9] text-[#5d4a36] px-3 py-1 rounded-lg flex items-center gap-1 shadow-sm active:scale-95">
-                <MessageCircle size={14}/> 對話輸入
-              </button>
-              <button onClick={() => setShowAddExpense(true)} className="bg-[#78b833] text-white px-3 py-1 rounded-lg flex items-center gap-1 shadow-sm active:scale-95">
-                <Plus size={14}/> 記一筆
-              </button>
-           </div>
-         )}
+         <div className="flex gap-2">
+            <button onClick={() => setShowLevel2Cost(true)} className="bg-orange-100 text-orange-700 border border-orange-200 px-3 py-1 rounded-lg flex items-center gap-1 shadow-sm active:scale-95 font-bold">
+              <PieChart size={14}/> 進階分析
+            </button>
+            {activeTab === 'expenses' && (
+              <>
+                <button onClick={() => setShowChatExpense(true)} className="bg-white border border-[#e8dcb9] text-[#5d4a36] px-3 py-1 rounded-lg flex items-center gap-1 shadow-sm active:scale-95">
+                  <MessageCircle size={14}/> 對話輸入
+                </button>
+                <button onClick={() => setShowAddExpense(true)} className="bg-[#78b833] text-white px-3 py-1 rounded-lg flex items-center gap-1 shadow-sm active:scale-95">
+                  <Plus size={14}/> 記一筆
+                </button>
+              </>
+            )}
+         </div>
       </div>
 
       {/* 2. KPI Cards */}
@@ -557,6 +564,7 @@ const BossDashboard: React.FC = () => {
       {showSettings && <SettingsModal />}
       {showAddExpense && <AddExpenseModal />}
       {showChatExpense && <ChatExpenseModal onClose={() => setShowChatExpense(false)} onSaved={refreshData} />}
+      {showLevel2Cost && <CostAnalysisModule onClose={() => setShowLevel2Cost(false)} />}
     </div>
   );
 };

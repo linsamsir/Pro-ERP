@@ -204,7 +204,7 @@ export interface Job {
 export interface Expense {
   id: string;
   date: string; // YYYY-MM-DD
-  category: 'insurance' | 'utilities' | 'phone' | 'fuel' | 'other';
+  category: 'insurance' | 'utilities' | 'phone' | 'fuel' | 'other' | 'consumables' | 'equipment'; // Expanded
   amount: number;
   paymentMethod?: string;
   note?: string;
@@ -218,9 +218,36 @@ export interface Expense {
 export interface AppSettings {
   monthlyTarget: number;
   monthlySalary: number; // Total combined salary
+  laborBreakdown?: { // New in Level 2
+    bossSalary: number;
+    partnerSalary: number;
+  };
   consumables: {
     citricCostPerCan: number;
     chemicalDrumCost: number;
     chemicalDrumToBottles: number;
   };
+}
+
+// --- Level 2: Advanced Cost Module Types ---
+
+export interface Asset {
+  id: string;
+  name: string;
+  purchaseDate: string; // YYYY-MM-DD
+  cost: number;
+  lifespanMonths: number; // 折舊月數
+  status: 'active' | 'repair' | 'retired';
+  note?: string;
+}
+
+export interface ConsumableLog {
+  id: string;
+  date: string; // 進貨日期
+  type: 'citric' | 'chemical'; // 檸檬酸 | 藥劑
+  purchaseType: 'bulk' | 'retail'; // 桶裝/袋裝 (Bulk) vs 零售 (Retail)
+  quantity: number; // 進貨數量 (e.g., 20kg or 1桶)
+  unit: string; // 'kg', '桶', '包'
+  totalCost: number; // 總進貨成本
+  yieldEstimate: number; // 預估可分裝成幾罐 (for unit cost calc)
 }
