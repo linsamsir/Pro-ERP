@@ -1,5 +1,5 @@
 
-import { Asset, ConsumableLog, Job, Expense, AppSettings, JobStatus } from '../types';
+import { L2Asset, L2StockLog, Job, Expense, AppSettings, JobStatus } from '../types';
 
 export interface MonthlyCostReport {
   month: string; // YYYY-MM
@@ -16,28 +16,28 @@ export interface MonthlyCostReport {
 
 export const CostEngine = {
   // Module A: Calculate Weighted Average Cost per "Can"
-  calculateUnitCosts: (logs: ConsumableLog[], defaultSettings: AppSettings['consumables']) => {
+  calculateUnitCosts: (logs: L2StockLog[], defaultSettings: AppSettings['consumables']) => {
     // Citric Acid
-    const citricLogs = logs.filter(l => l.type === 'citric');
+    const citricLogs = logs.filter(l => l.itemType === 'citric');
     let citricTotalCost = 0;
     let citricTotalCans = 0;
 
     if (citricLogs.length > 0) {
       citricLogs.forEach(l => {
         citricTotalCost += l.totalCost;
-        citricTotalCans += l.yieldEstimate;
+        citricTotalCans += (l.quantity * l.yieldPerUnit);
       });
     }
     
     // Chemical
-    const chemLogs = logs.filter(l => l.type === 'chemical');
+    const chemLogs = logs.filter(l => l.itemType === 'chemical');
     let chemTotalCost = 0;
     let chemTotalCans = 0;
 
     if (chemLogs.length > 0) {
       chemLogs.forEach(l => {
         chemTotalCost += l.totalCost;
-        chemTotalCans += l.yieldEstimate;
+        chemTotalCans += (l.quantity * l.yieldPerUnit);
       });
     }
 
@@ -49,7 +49,7 @@ export const CostEngine = {
   },
 
   // Module B: Calculate Depreciation for a specific month
-  calculateDepreciation: (assets: Asset[], year: number, month: number): number => {
+  calculateDepreciation: (assets: L2Asset[], year: number, month: number): number => {
     const targetDate = new Date(year, month - 1, 1); // 1st of target month
     let totalDepreciation = 0;
 
@@ -76,8 +76,8 @@ export const CostEngine = {
     month: number, 
     jobs: Job[], 
     expenses: Expense[], 
-    assets: Asset[], 
-    stockLogs: ConsumableLog[],
+    assets: L2Asset[], 
+    stockLogs: L2StockLog[],
     settings: AppSettings
   ): MonthlyCostReport => {
     const datePrefix = `${year}-${String(month).padStart(2, '0')}`;

@@ -1,5 +1,5 @@
 
-import { Customer, Job, JobStatus, Expense, AppSettings, Asset, ConsumableLog } from '../types';
+import { Customer, Job, JobStatus, Expense, AppSettings, L2Asset, L2StockLog, L2LaborConfig } from '../types';
 import { extractAiTags, getAiCooldownSeconds } from './gemini';
 
 const STORAGE_KEYS = {
@@ -7,8 +7,10 @@ const STORAGE_KEYS = {
   JOBS: 'erp_jobs_v3',
   EXPENSES: 'erp_expenses_v1',
   SETTINGS: 'erp_settings_v1',
-  ASSETS: 'erp_assets_v1',          // Level 2
-  CONSUMABLE_LOGS: 'erp_stock_v1'   // Level 2
+  // Level 2 Keys
+  L2_ASSETS: 'erp_l2_assets',
+  L2_STOCK: 'erp_l2_stock',
+  L2_LABOR: 'erp_l2_labor'
 };
 
 const getStorage = <T,>(key: string): T[] => {
@@ -29,6 +31,12 @@ const DEFAULT_SETTINGS: AppSettings = {
     chemicalDrumCost: 3000,
     chemicalDrumToBottles: 20 // derived cost ~150
   }
+};
+
+const DEFAULT_L2_LABOR: L2LaborConfig = {
+  bossSalary: 40000,
+  partnerSalary: 35000,
+  insuranceCost: 12000
 };
 
 export const db = {
@@ -141,34 +149,46 @@ export const db = {
     }
   },
   // --- Level 2 Modules ---
-  assets: {
-    getAll: () => getStorage<Asset>(STORAGE_KEYS.ASSETS),
-    save: (asset: Asset) => {
-      const list = getStorage<Asset>(STORAGE_KEYS.ASSETS);
-      const index = list.findIndex(a => a.id === asset.id);
-      if (index >= 0) list[index] = asset;
-      else list.push(asset);
-      saveStorage(STORAGE_KEYS.ASSETS, list);
+  l2: {
+    assets: {
+      getAll: () => getStorage<L2Asset>(STORAGE_KEYS.L2_ASSETS),
+      save: (item: L2Asset) => {
+        const list = getStorage<L2Asset>(STORAGE_KEYS.L2_ASSETS);
+        const idx = list.findIndex(i => i.id === item.id);
+        if (idx >= 0) list[idx] = item; else list.push(item);
+        saveStorage(STORAGE_KEYS.L2_ASSETS, list);
+      },
+      delete: (id: string) => saveStorage(STORAGE_KEYS.L2_ASSETS, getStorage<L2Asset>(STORAGE_KEYS.L2_ASSETS).filter(i => i.id !== id)),
+      generateId: () => `L2A-${Date.now()}`,
+      seed: () => {
+        const existing = getStorage<L2Asset>(STORAGE_KEYS.L2_ASSETS);
+        if (existing.length > 0) return;
+        const seeds: L2Asset[] = [
+           { id: 'a1', name: '高壓清洗機 (主)', cost: 18000, purchaseDate: '2023-01-01', lifespanMonths: 36, status: 'active' },
+           { id: 'a2', name: '沉水馬達', cost: 4500, purchaseDate: '2023-06-01', lifespanMonths: 24, status: 'active' },
+           { id: 'a3', name: '工業吸塵器', cost: 6000, purchaseDate: '2023-03-01', lifespanMonths: 36, status: 'active' },
+           { id: 'a4', name: '長梯 (12尺)', cost: 3500, purchaseDate: '2022-12-01', lifespanMonths: 60, status: 'active' }
+        ];
+        saveStorage(STORAGE_KEYS.L2_ASSETS, seeds);
+      }
     },
-    delete: (id: string) => {
-      const list = getStorage<Asset>(STORAGE_KEYS.ASSETS).filter(a => a.id !== id);
-      saveStorage(STORAGE_KEYS.ASSETS, list);
+    stock: {
+      getAll: () => getStorage<L2StockLog>(STORAGE_KEYS.L2_STOCK),
+      save: (item: L2StockLog) => {
+        const list = getStorage<L2StockLog>(STORAGE_KEYS.L2_STOCK);
+        const idx = list.findIndex(i => i.id === item.id);
+        if (idx >= 0) list[idx] = item; else list.push(item);
+        saveStorage(STORAGE_KEYS.L2_STOCK, list);
+      },
+      delete: (id: string) => saveStorage(STORAGE_KEYS.L2_STOCK, getStorage<L2StockLog>(STORAGE_KEYS.L2_STOCK).filter(i => i.id !== id)),
+      generateId: () => `L2S-${Date.now()}`
     },
-    generateId: () => `AST-${Date.now()}`
-  },
-  stock: {
-    getAll: () => getStorage<ConsumableLog>(STORAGE_KEYS.CONSUMABLE_LOGS),
-    save: (log: ConsumableLog) => {
-      const list = getStorage<ConsumableLog>(STORAGE_KEYS.CONSUMABLE_LOGS);
-      const index = list.findIndex(l => l.id === log.id);
-      if (index >= 0) list[index] = log;
-      else list.push(log);
-      saveStorage(STORAGE_KEYS.CONSUMABLE_LOGS, list);
-    },
-    delete: (id: string) => {
-      const list = getStorage<ConsumableLog>(STORAGE_KEYS.CONSUMABLE_LOGS).filter(l => l.id !== id);
-      saveStorage(STORAGE_KEYS.CONSUMABLE_LOGS, list);
-    },
-    generateId: () => `STK-${Date.now()}`
+    labor: {
+      get: (): L2LaborConfig => {
+        const d = localStorage.getItem(STORAGE_KEYS.L2_LABOR);
+        return d ? JSON.parse(d) : DEFAULT_L2_LABOR;
+      },
+      save: (cfg: L2LaborConfig) => localStorage.setItem(STORAGE_KEYS.L2_LABOR, JSON.stringify(cfg))
+    }
   }
 };

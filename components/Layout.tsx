@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Home, Users, ClipboardList, Database, Menu, X, Tent, Crown } from 'lucide-react';
+import { Home, Users, ClipboardList, Database, Menu, X, Tent, Crown, PieChart } from 'lucide-react';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -14,6 +14,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onNavigate }) => 
   const navItems = [
     { id: 'dashboard', label: '村莊地圖', icon: Home, color: 'text-orange-500' },
     { id: 'boss_dashboard', label: '老闆戰情', icon: Crown, color: 'text-yellow-500' },
+    { id: 'analysis', label: '進階分析', icon: PieChart, color: 'text-indigo-500' }, // New L2 Entry Point
     { id: 'customers', label: '村民名冊', icon: Users, color: 'text-blue-500' },
     { id: 'jobs', label: '村莊任務', icon: ClipboardList, color: 'text-green-600' },
     { id: 'import', label: '移居中心', icon: Tent, color: 'text-purple-500' },
@@ -79,7 +80,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onNavigate }) => 
           backgroundImage: 'radial-gradient(#78b833 1px, transparent 1px)',
           backgroundSize: '40px 40px'
         }} />
-        <div className="p-4 md:p-10 relative z-10 max-w-7xl mx-auto">
+        <div className={`relative z-10 mx-auto ${activeView === 'analysis' ? 'h-full p-0' : 'p-4 md:p-10 max-w-7xl'}`}>
           {children}
         </div>
       </main>

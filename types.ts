@@ -231,23 +231,27 @@ export interface AppSettings {
 
 // --- Level 2: Advanced Cost Module Types ---
 
-export interface Asset {
+export interface L2Asset {
   id: string;
   name: string;
   purchaseDate: string; // YYYY-MM-DD
   cost: number;
-  lifespanMonths: number; // 折舊月數
-  status: 'active' | 'repair' | 'retired';
-  note?: string;
+  lifespanMonths: number;
+  status: 'active' | 'retired' | 'maintenance';
 }
 
-export interface ConsumableLog {
+export interface L2StockLog {
   id: string;
-  date: string; // 進貨日期
-  type: 'citric' | 'chemical'; // 檸檬酸 | 藥劑
-  purchaseType: 'bulk' | 'retail'; // 桶裝/袋裝 (Bulk) vs 零售 (Retail)
-  quantity: number; // 進貨數量 (e.g., 20kg or 1桶)
-  unit: string; // 'kg', '桶', '包'
-  totalCost: number; // 總進貨成本
-  yieldEstimate: number; // 預估可分裝成幾罐 (for unit cost calc)
+  date: string;
+  itemType: 'citric' | 'chemical';
+  purchaseType: 'bulk' | 'retail';
+  quantity: number; // 桶數/包數
+  totalCost: number;
+  yieldPerUnit: number; // 一桶可分裝幾罐
+}
+
+export interface L2LaborConfig {
+  bossSalary: number;
+  partnerSalary: number;
+  insuranceCost: number;
 }

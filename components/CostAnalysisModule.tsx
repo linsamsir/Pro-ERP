@@ -1,9 +1,9 @@
 
 import React from 'react';
 import { db } from '../services/db';
-import { Asset, ConsumableLog } from '../types';
+import { L2Asset, L2StockLog } from '../types';
 import { CostEngine, MonthlyCostReport } from '../services/costEngine';
-import { X, PieChart, Package, Truck, HardHat, Receipt, Trash2, Plus, Calendar, Download, ChevronLeft, ChevronRight } from 'lucide-react';
+import { X, PieChart, Package, Truck, HardHat, Receipt, Trash2, Plus, Calendar, Download, ChevronLeft, ChevronRight, AlertCircle } from 'lucide-react';
 
 interface CostAnalysisModuleProps {
   onClose: () => void;
@@ -16,21 +16,21 @@ const CostAnalysisModule: React.FC<CostAnalysisModuleProps> = ({ onClose }) => {
   const [currentDate, setCurrentDate] = React.useState(new Date());
 
   // Data
-  const [assets, setAssets] = React.useState<Asset[]>([]);
-  const [stockLogs, setStockLogs] = React.useState<ConsumableLog[]>([]);
+  const [assets, setAssets] = React.useState<L2Asset[]>([]);
+  const [stockLogs, setStockLogs] = React.useState<L2StockLog[]>([]);
   const [report, setReport] = React.useState<MonthlyCostReport | null>(null);
   const [settings, setSettings] = React.useState(db.settings.get());
 
   // Forms
   const [showAssetForm, setShowAssetForm] = React.useState(false);
-  const [newAsset, setNewAsset] = React.useState<Partial<Asset>>({ name: '', cost: 0, lifespanMonths: 24, purchaseDate: new Date().toLocaleDateString('en-CA'), status: 'active' });
+  const [newAsset, setNewAsset] = React.useState<Partial<L2Asset>>({ name: '', cost: 0, lifespanMonths: 24, purchaseDate: new Date().toLocaleDateString('en-CA'), status: 'active' });
 
   const [showStockForm, setShowStockForm] = React.useState(false);
-  const [newStock, setNewStock] = React.useState<Partial<ConsumableLog>>({ type: 'citric', purchaseType: 'bulk', quantity: 1, totalCost: 0, yieldEstimate: 20 });
+  const [newStock, setNewStock] = React.useState<Partial<L2StockLog>>({ itemType: 'citric', purchaseType: 'bulk', quantity: 1, totalCost: 0, yieldPerUnit: 20 });
 
   const refreshData = () => {
-    setAssets(db.assets.getAll());
-    setStockLogs(db.stock.getAll());
+    setAssets(db.l2.assets.getAll());
+    setStockLogs(db.l2.stock.getAll());
     setSettings(db.settings.get());
   };
 
@@ -61,14 +61,14 @@ const CostAnalysisModule: React.FC<CostAnalysisModuleProps> = ({ onClose }) => {
   // --- Handlers ---
   const handleAddAsset = () => {
     if (!newAsset.name || !newAsset.cost) return;
-    db.assets.save({ ...newAsset, id: db.assets.generateId() } as Asset);
+    db.l2.assets.save({ ...newAsset, id: db.l2.assets.generateId() } as L2Asset);
     setShowAssetForm(false);
     refreshData();
   };
 
   const handleAddStock = () => {
     if (!newStock.quantity || !newStock.totalCost) return;
-    db.stock.save({ ...newStock, id: db.stock.generateId(), date: new Date().toLocaleDateString('en-CA') } as ConsumableLog);
+    db.l2.stock.save({ ...newStock, id: db.l2.stock.generateId(), date: new Date().toLocaleDateString('en-CA') } as L2StockLog);
     setShowStockForm(false);
     refreshData();
   };
@@ -241,7 +241,7 @@ const CostAnalysisModule: React.FC<CostAnalysisModuleProps> = ({ onClose }) => {
                                 <td className="p-3 text-sm font-mono text-right">${a.cost.toLocaleString()}</td>
                                 <td className="p-3 text-sm font-mono text-right text-red-400">${Math.round(a.cost / a.lifespanMonths).toLocaleString()}</td>
                                 <td className="p-3 text-right">
-                                   <button onClick={() => { if(confirm('刪除?')) { db.assets.delete(a.id); refreshData(); }}} className="text-slate-300 hover:text-red-500"><Trash2 size={14}/></button>
+                                   <button onClick={() => { if(confirm('刪除?')) { db.l2.assets.delete(a.id); refreshData(); }}} className="text-slate-300 hover:text-red-500"><Trash2 size={14}/></button>
                                 </td>
                              </tr>
                            ))}
@@ -253,72 +253,57 @@ const CostAnalysisModule: React.FC<CostAnalysisModuleProps> = ({ onClose }) => {
           )}
 
           {activeTab === 'stock' && (
-             <div className="space-y-4 animate-in fade-in">
-                <div className="flex justify-between items-center">
-                   <h3 className="text-xl font-black text-[#5d4a36]">耗材進貨紀錄</h3>
-                   <button onClick={() => setShowStockForm(!showStockForm)} className="ac-btn-green px-4 py-2 flex items-center gap-1 text-sm"><Plus size={16}/> 登記進貨</button>
+             <div className="space-y-6 animate-in fade-in">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                   <div className="bg-white p-6 rounded-[2rem] border-2 border-[#e8dcb9]">
+                      <h3 className="font-black text-[#5d4a36] mb-4">1. 登記進貨</h3>
+                      <div className="space-y-3">
+                         <div className="flex gap-2">
+                            <select className="input-nook py-2" value={newStock.itemType} onChange={e => setNewStock({...newStock, itemType: e.target.value as any})}>
+                               <option value="citric">檸檬酸</option>
+                               <option value="chemical">藥劑</option>
+                            </select>
+                            <input type="number" className="input-nook py-2" placeholder="總成本" value={newStock.totalCost || ''} onChange={e => setNewStock({...newStock, totalCost: parseInt(e.target.value)})} />
+                         </div>
+                         <div className="flex gap-2">
+                            <input type="number" className="input-nook py-2" placeholder="數量(桶/包)" value={newStock.quantity} onChange={e => setNewStock({...newStock, quantity: parseInt(e.target.value)})} />
+                            <input type="number" className="input-nook py-2" placeholder="每單位可分裝幾罐" value={newStock.yieldPerUnit} onChange={e => setNewStock({...newStock, yieldPerUnit: parseInt(e.target.value)})} />
+                         </div>
+                         <button onClick={handleAddStock} className="w-full bg-[#78b833] text-white py-3 rounded-xl font-black">儲存進貨單</button>
+                      </div>
+                   </div>
+                   
+                   <div className="bg-blue-50 p-6 rounded-[2rem] border border-blue-100">
+                      <h3 className="font-black text-blue-900 mb-4">2. 目前單位成本 (加權平均)</h3>
+                      <div className="space-y-4">
+                         <div className="flex justify-between items-center bg-white p-4 rounded-xl shadow-sm">
+                            <span className="font-bold text-blue-800">🍋 檸檬酸 / 罐</span>
+                            <span className="font-mono text-2xl font-black text-[#5d4a36]">${Math.round(CostEngine.calculateUnitCosts(stockLogs, settings.consumables).citric)}</span>
+                         </div>
+                         <div className="flex justify-between items-center bg-white p-4 rounded-xl shadow-sm">
+                            <span className="font-bold text-blue-800">🧪 藥劑 / 罐</span>
+                            <span className="font-mono text-2xl font-black text-[#5d4a36]">${Math.round(CostEngine.calculateUnitCosts(stockLogs, settings.consumables).chemical)}</span>
+                         </div>
+                         <p className="text-xs text-blue-400 mt-2">
+                            * 系統會自動加總所有歷史進貨紀錄，算出平均每罐的真實成本。
+                         </p>
+                      </div>
+                   </div>
                 </div>
 
-                {showStockForm && (
-                  <div className="bg-white p-4 rounded-2xl border-2 border-[#e8dcb9] space-y-3">
-                     <div className="flex gap-2">
-                        <select className="input-nook py-1" value={newStock.type} onChange={e => setNewStock({...newStock, type: e.target.value as any})}>
-                           <option value="citric">檸檬酸</option>
-                           <option value="chemical">藥劑</option>
-                        </select>
-                        <select className="input-nook py-1" value={newStock.purchaseType} onChange={e => setNewStock({...newStock, purchaseType: e.target.value as any})}>
-                           <option value="bulk">批發(桶/袋)</option>
-                           <option value="retail">零售</option>
-                        </select>
-                     </div>
-                     <div className="grid grid-cols-2 gap-3">
-                        <div>
-                           <label className="text-[10px] text-slate-400 font-bold">進貨數量 (桶/包)</label>
-                           <input className="input-nook py-1" type="number" value={newStock.quantity} onChange={e => setNewStock({...newStock, quantity: parseInt(e.target.value)})} />
-                        </div>
-                        <div>
-                           <label className="text-[10px] text-slate-400 font-bold">總進貨金額</label>
-                           <input className="input-nook py-1" type="number" value={newStock.totalCost || ''} onChange={e => setNewStock({...newStock, totalCost: parseInt(e.target.value)})} />
-                        </div>
-                     </div>
-                     <div>
-                        <label className="text-[10px] text-slate-400 font-bold">預估可分裝成幾罐 (總計)?</label>
-                        <input className="input-nook py-1" type="number" value={newStock.yieldEstimate} onChange={e => setNewStock({...newStock, yieldEstimate: parseInt(e.target.value)})} />
-                        <p className="text-[10px] text-orange-400 mt-1">
-                           * 平均每罐成本: ${newStock.totalCost && newStock.yieldEstimate ? Math.round(newStock.totalCost / newStock.yieldEstimate) : 0}
-                        </p>
-                     </div>
-                     <button onClick={handleAddStock} className="w-full bg-[#78b833] text-white py-2 rounded-xl font-bold">儲存紀錄</button>
-                  </div>
-                )}
-                
-                <div className="bg-blue-50 p-4 rounded-2xl text-xs text-blue-700 font-bold">
-                   系統會根據您的進貨紀錄，採用「加權平均法」計算每個月的實際耗材成本，比單純設定固定成本更精準。
-                </div>
-
-                <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
+                <div className="bg-white rounded-[2rem] border-2 border-[#e8dcb9] overflow-hidden">
                    <table className="w-full text-left">
-                      <thead className="bg-slate-50">
-                         <tr>
-                            <th className="p-3 text-xs font-black text-slate-400">日期</th>
-                            <th className="p-3 text-xs font-black text-slate-400">品項</th>
-                            <th className="p-3 text-xs font-black text-slate-400 text-right">進貨數</th>
-                            <th className="p-3 text-xs font-black text-slate-400 text-right">總金額</th>
-                            <th className="p-3 text-xs font-black text-slate-400 text-right">預估罐數</th>
-                            <th className="p-3"></th>
-                         </tr>
+                      <thead className="bg-slate-50 text-xs font-black text-slate-400">
+                         <tr><th className="p-4">日期</th><th className="p-4">品項</th><th className="p-4 text-right">總成本</th><th className="p-4 text-right">產出罐數</th><th className="p-4"></th></tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
                          {stockLogs.map(l => (
                             <tr key={l.id}>
-                               <td className="p-3 text-sm text-slate-500">{l.date}</td>
-                               <td className="p-3 font-bold text-[#5d4a36]">{l.type === 'citric' ? '🍋 檸檬酸' : '🧪 藥劑'}</td>
-                               <td className="p-3 text-sm font-mono text-right">{l.quantity} {l.purchaseType === 'bulk' ? '桶/包' : '個'}</td>
-                               <td className="p-3 text-sm font-mono text-right text-[#78b833]">${l.totalCost.toLocaleString()}</td>
-                               <td className="p-3 text-sm font-mono text-right">{l.yieldEstimate} 罐</td>
-                               <td className="p-3 text-right">
-                                  <button onClick={() => { if(confirm('刪除?')) { db.stock.delete(l.id); refreshData(); }}} className="text-slate-300 hover:text-red-500"><Trash2 size={14}/></button>
-                               </td>
+                               <td className="p-4 text-sm font-bold text-slate-500">{l.date}</td>
+                               <td className="p-4 font-black text-[#5d4a36]">{l.itemType === 'citric' ? '檸檬酸' : '藥劑'}</td>
+                               <td className="p-4 text-right font-mono">${l.totalCost}</td>
+                               <td className="p-4 text-right font-mono">{l.quantity * l.yieldPerUnit}</td>
+                               <td className="p-4 text-right"><button onClick={() => { db.l2.stock.delete(l.id); refreshData(); }} className="text-slate-300 hover:text-red-500"><Trash2 size={16}/></button></td>
                             </tr>
                          ))}
                       </tbody>
@@ -328,59 +313,50 @@ const CostAnalysisModule: React.FC<CostAnalysisModuleProps> = ({ onClose }) => {
           )}
 
           {activeTab === 'labor' && (
-             <div className="space-y-4 animate-in fade-in">
-                <h3 className="text-xl font-black text-[#5d4a36]">固定人力成本設定</h3>
-                
-                <div className="bg-white p-6 rounded-3xl border-2 border-[#e8dcb9] space-y-6">
-                   <div className="flex gap-4 items-center">
-                      <div className="w-16 h-16 rounded-full bg-blue-100 flex items-center justify-center text-3xl">👨</div>
-                      <div className="flex-1">
-                         <label className="text-xs font-bold text-[#b59a7a]">老闆月薪</label>
-                         <input 
-                           type="number" 
-                           className="input-nook" 
-                           value={settings.laborBreakdown?.bossSalary ?? 30000}
-                           onChange={e => {
-                              const val = parseInt(e.target.value) || 0;
-                              const partner = settings.laborBreakdown?.partnerSalary ?? 30000;
-                              const newSet = {
+             <div className="max-w-xl mx-auto space-y-6 animate-in fade-in">
+                <div className="bg-white p-8 rounded-[2rem] border-2 border-[#e8dcb9] shadow-sm">
+                   <h3 className="font-black text-xl text-[#5d4a36] mb-6 flex items-center gap-2"><HardHat className="text-orange-500"/> 固定人力成本</h3>
+                   
+                   <div className="space-y-4">
+                      <div>
+                         <label className="text-xs font-bold text-slate-400 mb-1 block">老闆月薪</label>
+                         <input type="number" className="input-nook py-3 text-lg" value={settings.laborBreakdown?.bossSalary ?? 30000} onChange={e => {
+                            const val = parseInt(e.target.value) || 0;
+                            const partner = settings.laborBreakdown?.partnerSalary ?? 30000;
+                            const newSet = {
                                 ...settings,
                                 monthlySalary: val + partner,
-                                laborBreakdown: { bossSalary: val, partnerSalary: partner }
-                              };
-                              setSettings(newSet);
-                              db.settings.save(newSet);
-                           }}
-                         />
+                                laborBreakdown: { ...settings.laborBreakdown!, bossSalary: val }
+                            };
+                            setSettings(newSet);
+                            db.settings.save(newSet);
+                         }} />
+                      </div>
+                      <div>
+                         <label className="text-xs font-bold text-slate-400 mb-1 block">闆娘月薪</label>
+                         <input type="number" className="input-nook py-3 text-lg" value={settings.laborBreakdown?.partnerSalary ?? 30000} onChange={e => {
+                            const val = parseInt(e.target.value) || 0;
+                            const boss = settings.laborBreakdown?.bossSalary ?? 30000;
+                            const newSet = {
+                                ...settings,
+                                monthlySalary: boss + val,
+                                laborBreakdown: { ...settings.laborBreakdown!, partnerSalary: val }
+                            };
+                            setSettings(newSet);
+                            db.settings.save(newSet);
+                         }} />
                       </div>
                    </div>
 
-                   <div className="flex gap-4 items-center">
-                      <div className="w-16 h-16 rounded-full bg-pink-100 flex items-center justify-center text-3xl">👩</div>
-                      <div className="flex-1">
-                         <label className="text-xs font-bold text-[#b59a7a]">闆娘月薪</label>
-                         <input 
-                           type="number" 
-                           className="input-nook" 
-                           value={settings.laborBreakdown?.partnerSalary ?? 30000}
-                           onChange={e => {
-                              const val = parseInt(e.target.value) || 0;
-                              const boss = settings.laborBreakdown?.bossSalary ?? 30000;
-                              const newSet = {
-                                ...settings,
-                                monthlySalary: boss + val,
-                                laborBreakdown: { bossSalary: boss, partnerSalary: val }
-                              };
-                              setSettings(newSet);
-                              db.settings.save(newSet);
-                           }}
-                         />
+                   <div className="mt-8 pt-6 border-t border-slate-100">
+                      <div className="flex justify-between items-center">
+                         <span className="font-black text-slate-400">每月總固定支出</span>
+                         <span className="text-3xl font-black text-[#5d4a36]">${settings.monthlySalary.toLocaleString()}</span>
                       </div>
-                   </div>
-                   
-                   <div className="pt-4 border-t border-slate-100 text-right">
-                      <div className="text-xs font-bold text-slate-400">總月薪成本 (自動同步至簡易報表)</div>
-                      <div className="text-3xl font-black text-[#5d4a36]">${settings.monthlySalary.toLocaleString()}</div>
+                      <div className="bg-orange-50 p-3 rounded-xl mt-4 text-xs font-bold text-orange-600 flex items-start gap-2">
+                         <AlertCircle size={16} className="shrink-0 mt-0.5"/>
+                         <div>此金額將除以「當月總工時」，算出每小時的人力成本率，再依據每張工單的工時進行攤提。</div>
+                      </div>
                    </div>
                 </div>
              </div>

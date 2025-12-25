@@ -12,69 +12,54 @@
       --bg-cream: #fbf8e6;
       --leaf-green: #78b833;
       --dark-green: #4a7a1f;
-      --wood-brown: #7c6046;
+      --wood-brown: #5d4a36;
       --sand-beige: #e8dcb9;
-      --sky-blue: #70d6ff;
       --card-white: #ffffff;
     }
     body { 
       font-family: 'Zen Maru Gothic', 'Varela Round', sans-serif; 
       background-color: var(--bg-cream);
       color: var(--wood-brown);
-      /* Subtle diagonal stripe pattern for that "Animal Crossing" background feel */
       background-image: repeating-linear-gradient(45deg, #f2edd4 25%, transparent 25%, transparent 75%, #f2edd4 75%, #f2edd4), repeating-linear-gradient(45deg, #f2edd4 25%, var(--bg-cream) 25%, var(--bg-cream) 75%, #f2edd4 75%, #f2edd4);
       background-position: 0 0, 10px 10px;
       background-size: 20px 20px;
       line-height: 1.6;
       overflow-x: hidden;
+      -webkit-font-smoothing: antialiased;
     }
     
-    /* AC Style: The "Card" - thick borders, rounded, soft shadow */
+    /* --- Design System: Typography --- */
+    .text-h1 { font-size: 28px; font-weight: 900; line-height: 1.3; color: var(--wood-brown); }
+    .text-h2 { font-size: 22px; font-weight: 900; line-height: 1.4; color: var(--wood-brown); }
+    .text-h3 { font-size: 18px; font-weight: 800; line-height: 1.4; color: var(--wood-brown); }
+    .text-body { font-size: 15px; font-weight: 500; line-height: 1.6; color: var(--wood-brown); }
+    .text-note { font-size: 14px; font-weight: 700; color: #b59a7a; } /* Min readable size */
+    .text-num  { font-family: monospace; font-weight: 700; }
+
+    /* --- Design System: Containers --- */
     .ac-card {
       background: var(--card-white);
-      border-radius: 2.5rem;
-      box-shadow: 0 10px 20px -5px rgba(124, 96, 70, 0.15);
-      border: 1px solid rgba(255,255,255,0.5);
+      border-radius: 1.5rem; /* Consistent Radius */
+      box-shadow: 0 4px 12px -2px rgba(93, 74, 54, 0.08);
+      border: 2px solid #f0f0f0;
+      padding: 1.5rem; /* Consistent Padding */
       position: relative;
       overflow: hidden;
     }
-
-    /* AC Style: The "Sticker" - white border, drop shadow */
-    .ac-sticker {
-      filter: drop-shadow(0 4px 0 rgba(0,0,0,0.1));
-      transition: transform 0.2s;
-    }
-    .ac-sticker:hover {
-      transform: scale(1.05) rotate(2deg);
+    
+    .card-highlight {
+      background: #fffbf0;
+      border: 2px solid var(--sand-beige);
+      border-radius: 1.5rem;
     }
 
-    /* AC Style: Progress Bar (Nook Miles style) */
-    .nook-bar-bg {
-      background: #e6e0c6;
-      border-radius: 999px;
-      height: 24px;
-      border: 3px solid white;
-      box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);
-    }
-    .nook-bar-fill {
-      background: repeating-linear-gradient(
-        45deg,
-        #78b833,
-        #78b833 10px,
-        #8bc84b 10px,
-        #8bc84b 20px
-      );
-      height: 100%;
-      border-radius: 999px;
-      transition: width 1s ease-out;
-    }
-
-    /* Inputs that look like paper slips */
+    /* --- Design System: Forms & Inputs --- */
     .input-nook {
       background: #fffdf5;
-      border: 2px dashed #e8dcb9;
-      border-radius: 1.5rem;
-      padding: 0.8rem 1.5rem;
+      border: 2px solid var(--sand-beige);
+      border-radius: 1rem;
+      padding: 0.8rem 1rem;
+      font-size: 16px; /* Prevent zoom on mobile */
       font-weight: 700;
       color: var(--wood-brown);
       outline: none;
@@ -84,27 +69,65 @@
     .input-nook:focus {
       border-color: var(--leaf-green);
       background: white;
-      border-style: solid;
     }
 
-    /* Buttons that look like gummy candy or plastic tokens */
-    .btn-action {
-      border-radius: 2rem;
+    /* --- Design System: Buttons & Options --- */
+    .btn-primary {
+      background-color: var(--leaf-green);
+      color: white;
       font-weight: 900;
+      font-size: 18px;
+      padding: 1rem 1.5rem;
+      border-radius: 1.25rem;
+      box-shadow: 0 4px 0 var(--dark-green);
       transition: all 0.1s;
-      position: relative;
-      top: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
     }
-    .btn-action:active {
-      top: 3px;
+    .btn-primary:active {
+      transform: translateY(4px);
+      box-shadow: none;
     }
-    
+
+    /* Selection Chips / Options - Big & Clear */
+    .btn-option {
+      padding: 0.75rem 1rem;
+      border-radius: 1rem;
+      font-size: 15px;
+      font-weight: 700;
+      border-width: 2px;
+      transition: all 0.2s;
+      text-align: center;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      cursor: pointer;
+    }
+    .btn-option.active {
+      background-color: #f0fdf4; /* Green-50 */
+      border-color: var(--leaf-green);
+      color: var(--dark-green);
+      box-shadow: 0 2px 0 rgba(120, 184, 51, 0.2);
+    }
+    .btn-option.inactive {
+      background-color: white;
+      border-color: #eee;
+      color: #9ca3af;
+    }
+    .btn-option.inactive:hover {
+      border-color: var(--sand-beige);
+      color: var(--wood-brown);
+    }
+
     /* Animations */
     @keyframes popIn {
-      0% { transform: scale(0.9); opacity: 0; }
+      0% { transform: scale(0.95); opacity: 0; }
       100% { transform: scale(1); opacity: 1; }
     }
-    .animate-pop { animation: popIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1); }
+    .animate-pop { animation: popIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); }
   </style>
 <script type="importmap">
 {
