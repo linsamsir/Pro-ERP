@@ -1,9 +1,44 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
 
 let lastQuotaExceededTimestamp = 0;
 const QUOTA_COOLDOWN_MS = 60000;
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+// Helper to robustly find the API Key in various environments (Vite, CRA, Node)
+const getApiKey = (): string => {
+  // 1. Try Vite standard (import.meta.env.VITE_API_KEY)
+  try {
+    // @ts-ignore
+    if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_API_KEY) {
+      // @ts-ignore
+      return import.meta.env.VITE_API_KEY;
+    }
+  } catch (e) {}
+
+  // 2. Try Node/CRA/Process standard
+  try {
+    // @ts-ignore
+    if (typeof process !== 'undefined' && process.env) {
+      // @ts-ignore
+      if (process.env.VITE_API_KEY) return process.env.VITE_API_KEY;
+      // @ts-ignore
+      if (process.env.REACT_APP_API_KEY) return process.env.REACT_APP_API_KEY;
+      // @ts-ignore
+      if (process.env.API_KEY) return process.env.API_KEY;
+    }
+  } catch (e) {}
+
+  // 3. Fallback to global window (from index.html polyfill)
+  try {
+    if (typeof window !== 'undefined' && (window as any).process?.env?.API_KEY) {
+      return (window as any).process.env.API_KEY;
+    }
+  } catch (e) {}
+
+  return '';
+};
 
 export const getAiCooldownSeconds = (): number => {
   const now = Date.now();
@@ -15,8 +50,13 @@ export const getAiCooldownSeconds = (): number => {
 };
 
 export const checkApiHealth = async (): Promise<{ status: 'ok' | 'quota_low' | 'error', message: string }> => {
+  const apiKey = getApiKey();
+  if (!apiKey) {
+    return { status: 'error', message: '未偵測到 API 金鑰。請在 Vercel 設定 VITE_API_KEY。' };
+  }
+
   try {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = new GoogleGenAI({ apiKey });
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: "ping",
@@ -50,6 +90,12 @@ export const checkApiHealth = async (): Promise<{ status: 'ok' | 'quota_low' | '
 export const extractAiTags = async (notes: string, maxRetries = 1): Promise<string[]> => {
   if (!notes.trim()) return [];
 
+  const apiKey = getApiKey();
+  if (!apiKey) {
+    console.warn("AI Tagging skipped: No API Key");
+    return [];
+  }
+
   const cooldown = getAiCooldownSeconds();
   if (cooldown > 0) {
     throw new Error(`AI 額度冷卻中，請於 ${cooldown} 秒後再試。`);
@@ -59,7 +105,7 @@ export const extractAiTags = async (notes: string, maxRetries = 1): Promise<stri
   
   const runExtraction = async (): Promise<string[]> => {
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const ai = new GoogleGenAI({ apiKey });
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: `你是一個專業的水塔清洗系統助理。請從以下文字擷取 3-5 個繁體中文關鍵標籤（例如：#頂樓外推 #水壓偏低 #長期客戶）：\n\n"${notes}"`,
