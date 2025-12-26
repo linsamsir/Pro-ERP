@@ -2,6 +2,7 @@
 import React from 'react';
 import { db } from '../services/db';
 import { Job, Customer, JobStatus, Expense, AppSettings, L2LaborConfig } from '../types';
+import { auth } from '../services/auth';
 import { 
   TrendingUp, DollarSign, Target, Download, Activity, Users, Filter, CheckCircle2, XCircle,
   Settings, Plus, Droplets, Zap, ShieldCheck, Trash2, MessageCircle, HardHat, Package
@@ -216,6 +217,9 @@ const BossDashboard: React.FC = () => {
   const [jobs, setJobs] = React.useState<Job[]>([]);
   const [customers, setCustomers] = React.useState<Customer[]>([]);
   const [expenses, setExpenses] = React.useState<Expense[]>([]);
+  
+  const canWrite = auth.canWrite(); // Used for edit buttons
+  const isAdmin = auth.isAdmin(); // Used for settings access
 
   // --- View State ---
   const [dateRange, setDateRange] = React.useState<DateRange>(() => {
@@ -368,6 +372,9 @@ const BossDashboard: React.FC = () => {
     refreshData();
   };
 
+  // Masking Helper
+  const maskedVal = (val: number) => auth.maskSensitiveData(val.toLocaleString(), 'money');
+
   return (
     <div className="max-w-6xl mx-auto pb-20 space-y-8 animate-pop">
       
@@ -395,15 +402,17 @@ const BossDashboard: React.FC = () => {
               {type === 'this_month' ? '本月' : type === 'last_month' ? '上月' : type === 'last_7d' ? '近7天' : '近30天'}
             </button>
           ))}
-          <button onClick={() => setShowSettings(true)} className="px-3 py-2 rounded-xl bg-white border-2 border-[#e8dcb9] text-[#b59a7a] hover:text-[#78b833]">
-             <Settings size={20} />
-          </button>
+          {isAdmin && (
+            <button onClick={() => setShowSettings(true)} className="px-3 py-2 rounded-xl bg-white border-2 border-[#e8dcb9] text-[#b59a7a] hover:text-[#78b833]">
+               <Settings size={20} />
+            </button>
+          )}
         </div>
       </div>
 
       <div className="bg-[#fffbf0] border-l-4 border-[#78b833] p-4 rounded-r-xl text-body font-bold text-[#b59a7a] flex flex-wrap gap-4 justify-between items-center shadow-sm">
          <span>統計區間：{dateRange.start.toLocaleDateString()} ~ {dateRange.end.toLocaleDateString()} ({daysInView} 天)</span>
-         {activeTab === 'expenses' && (
+         {activeTab === 'expenses' && canWrite && (
            <div className="flex gap-3">
               <button onClick={() => setShowChatExpense(true)} className="bg-white border border-[#e8dcb9] text-[#5d4a36] px-4 py-2 rounded-xl flex items-center gap-2 shadow-sm active:scale-95 font-bold transition-colors hover:border-[#78b833]">
                 <MessageCircle size={16}/> 對話輸入
@@ -419,7 +428,7 @@ const BossDashboard: React.FC = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
          <StatCard 
            label="區間營收 (Revenue)" 
-           value={`$${totalRevenue.toLocaleString()}`} 
+           value={`$${maskedVal(totalRevenue)}`} 
            sub={`${filteredJobs.length} 張工單`}
            icon={TrendingUp}
            borderClass="border-[#78b833]"
@@ -427,15 +436,15 @@ const BossDashboard: React.FC = () => {
          />
          <StatCard 
            label="總成本 (Total Costs)" 
-           value={`$${totalCosts.toLocaleString()}`} 
-           sub={`含薪資 ${laborCost.toLocaleString()}`}
+           value={`$${maskedVal(totalCosts)}`} 
+           sub={`含薪資 ${maskedVal(laborCost)}`}
            icon={Zap}
            borderClass="border-red-200"
            colorClass="bg-red-400"
          />
          <StatCard 
            label="淨利 (Net Profit)" 
-           value={`$${netProfit.toLocaleString()}`} 
+           value={`$${maskedVal(netProfit)}`} 
            sub={`淨利率 ${totalRevenue > 0 ? Math.round((netProfit/totalRevenue)*100) : 0}%`}
            icon={DollarSign}
            borderClass={netProfit >= 0 ? "border-[#5d4a36]" : "border-red-500"}
@@ -447,7 +456,7 @@ const BossDashboard: React.FC = () => {
             <div className="flex justify-between items-start">
                <div>
                  <div className="text-note mb-2 flex items-center gap-2"><Target size={16}/> 月目標進度</div>
-                 <div className="text-h2 text-[#5d4a36]">${totalRevenue.toLocaleString()} <span className="text-sm text-slate-300 font-normal">/ {settings.monthlyTarget/1000}k</span></div>
+                 <div className="text-h2 text-[#5d4a36]">${maskedVal(totalRevenue)} <span className="text-sm text-slate-300 font-normal">/ {settings.monthlyTarget/1000}k</span></div>
                </div>
                <div className={`px-3 py-1 rounded-lg text-xs font-black ${gapToTarget > 0 ? 'bg-orange-50 text-orange-500' : 'bg-green-50 text-green-600'}`}>
                  {gapToTarget > 0 ? `${Math.round((totalRevenue/target)*100)}%` : '達成'}
@@ -455,7 +464,7 @@ const BossDashboard: React.FC = () => {
             </div>
             {dateRange.type === 'this_month' && gapToTarget > 0 && (
                <div className="mt-3 text-alert font-bold bg-slate-50 p-2 rounded-lg text-orange-500">
-                  剩 {remainingDays} 天，每天需做 <span className="font-black text-[#5d4a36]">${dailyNeeded.toLocaleString()}</span>
+                  剩 {remainingDays} 天，每天需做 <span className="font-black text-[#5d4a36]">${maskedVal(dailyNeeded)}</span>
                </div>
             )}
          </div>
@@ -487,8 +496,8 @@ const BossDashboard: React.FC = () => {
         <div className="p-5 bg-white border-b border-slate-100 flex justify-between items-center">
            <h3 className="font-bold text-[#5d4a36] text-body pl-2">
              {activeTab === 'revenue' && `共 ${filteredJobs.length} 筆完工資料`}
-             {activeTab === 'expenses' && `共 ${filteredExpenses.length} 筆支出 (${opexCost.toLocaleString()})`}
-             {activeTab === 'consumables' && `耗材成本 $${consumablesCost.toLocaleString()}`}
+             {activeTab === 'expenses' && `共 ${filteredExpenses.length} 筆支出 (${maskedVal(opexCost)})`}
+             {activeTab === 'consumables' && `耗材成本 $${maskedVal(consumablesCost)}`}
              {activeTab === 'rfm' && `Top 10 高價值客戶`}
            </h3>
            <button 
@@ -529,7 +538,7 @@ const BossDashboard: React.FC = () => {
                     <td className="p-5 text-body font-bold text-[#5d4a36] whitespace-nowrap">{job.serviceDate}</td>
                     <td className="p-5 text-body font-bold text-[#5d4a36]">{job.contactPerson}</td>
                     <td className="p-5 text-sm text-slate-500">{job.serviceItems.join('+')}</td>
-                    <td className="p-5 text-body font-black text-[#78b833] text-right">${(job.financial?.total_amount||0).toLocaleString()}</td>
+                    <td className="p-5 text-body font-black text-[#78b833] text-right">${maskedVal(job.financial?.total_amount||0)}</td>
                     <td className="p-5 text-sm text-slate-400">{job.financial?.payment_method}</td>
                   </tr>
                 ))}
@@ -558,9 +567,9 @@ const BossDashboard: React.FC = () => {
                        {exp.note}
                        {exp.source === 'chat_input' && <span className="ml-2 inline-block text-[10px] bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded">AI</span>}
                     </td>
-                    <td className="p-5 text-body font-black text-red-400 text-right">${exp.amount.toLocaleString()}</td>
+                    <td className="p-5 text-body font-black text-red-400 text-right">${maskedVal(exp.amount)}</td>
                     <td className="p-5 text-center">
-                       <button onClick={() => { if(confirm('刪除此支出？')) { db.expenses.delete(exp.id); refreshData(); } }} className="text-slate-300 hover:text-red-500 p-2"><Trash2 size={16}/></button>
+                       {canWrite && <button onClick={() => { if(confirm('刪除此支出？')) { db.expenses.delete(exp.id); refreshData(); } }} className="text-slate-300 hover:text-red-500 p-2"><Trash2 size={16}/></button>}
                     </td>
                   </tr>
                 ))}
@@ -576,14 +585,14 @@ const BossDashboard: React.FC = () => {
                       <div className="text-h2 text-[#5d4a36] mb-1">
                          {filteredJobs.reduce((sum, j) => sum + (j.consumables?.citric_acid??0), 0)} <span className="text-sm text-slate-400 font-normal">罐</span>
                       </div>
-                      <div className="text-sm text-slate-400">成本約 ${filteredJobs.reduce((sum, j) => sum + (j.consumables?.citric_acid??0) * settings.consumables.citricCostPerCan, 0).toLocaleString()}</div>
+                      <div className="text-sm text-slate-400">成本約 ${maskedVal(filteredJobs.reduce((sum, j) => sum + (j.consumables?.citric_acid??0) * settings.consumables.citricCostPerCan, 0))}</div>
                    </div>
                    <div className="flex-1 bg-blue-50 p-6 rounded-2xl border border-blue-200">
                       <div className="text-note text-blue-600 mb-3">藥劑總用量</div>
                       <div className="text-h2 text-[#5d4a36] mb-1">
                          {filteredJobs.reduce((sum, j) => sum + (j.consumables?.chemical??0), 0)} <span className="text-sm text-slate-400 font-normal">罐</span>
                       </div>
-                      <div className="text-sm text-slate-400">成本約 ${filteredJobs.reduce((sum, j) => sum + (j.consumables?.chemical??0) * chemicalUnitCost, 0).toLocaleString()}</div>
+                      <div className="text-sm text-slate-400">成本約 ${maskedVal(filteredJobs.reduce((sum, j) => sum + (j.consumables?.chemical??0) * chemicalUnitCost, 0))}</div>
                    </div>
                 </div>
                 <table className="w-full text-left border-collapse border border-slate-100 rounded-xl">
@@ -633,7 +642,7 @@ const BossDashboard: React.FC = () => {
                          {c.displayName}
                          {c.totalSpent > 20000 && <span className="ml-2 text-[10px] bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded">VIP</span>}
                        </td>
-                       <td className="p-5 text-body font-black text-orange-400 text-right font-mono">${c.totalSpent.toLocaleString()}</td>
+                       <td className="p-5 text-body font-black text-orange-400 text-right font-mono">${maskedVal(c.totalSpent)}</td>
                        <td className="p-5 text-sm text-center">{c.jobCount}</td>
                        <td className="p-5 text-sm text-slate-400">{c.lastJobDate || '無'}</td>
                      </tr>

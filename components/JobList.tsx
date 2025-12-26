@@ -22,9 +22,24 @@ const JobList: React.FC<JobListProps> = ({ onAdd, onEdit, onView }) => {
 
   const getCustomer = (cid: string) => db.customers.get(cid);
 
+  // Fix Search: Include Phone Check
   const filtered = jobs.filter(j => {
     const cust = getCustomer(j.customerId);
-    return (cust?.displayName || '').includes(searchTerm) || j.jobId.includes(searchTerm);
+    const searchLower = searchTerm.toLowerCase();
+    
+    // Check Job ID
+    if (j.jobId.toLowerCase().includes(searchLower)) return true;
+    
+    // Check Customer Name
+    if (cust?.displayName.toLowerCase().includes(searchLower)) return true;
+    
+    // Check Customer Phone (Fix)
+    if (cust?.phones.some(p => p.number.includes(searchTerm))) return true;
+    
+    // Check Contact Person on Job
+    if (j.contactPerson?.toLowerCase().includes(searchLower)) return true;
+
+    return false;
   }).sort((a, b) => new Date(b.serviceDate).getTime() - new Date(a.serviceDate).getTime());
 
   const handleDelete = (id: string) => {
@@ -77,7 +92,8 @@ const JobList: React.FC<JobListProps> = ({ onAdd, onEdit, onView }) => {
   };
 
   const getTotalAmount = (job: Job) => {
-    return job.financial?.total_amount ?? job.totalPaid ?? 0;
+    const val = job.financial?.total_amount ?? job.totalPaid ?? 0;
+    return auth.maskSensitiveData(val.toLocaleString(), 'money');
   };
 
   const getCombinedTags = (job: Job) => {
@@ -95,8 +111,8 @@ const JobList: React.FC<JobListProps> = ({ onAdd, onEdit, onView }) => {
             <Plus size={24} /> 快速回報
           </button>
         ) : (
-          <button disabled className="bg-slate-200 text-slate-400 px-8 py-3 flex items-center gap-2 rounded-2xl font-bold cursor-not-allowed">
-            <Lock size={20} /> 無權限
+          <button disabled className="bg-slate-100 text-slate-400 px-8 py-3 flex items-center gap-2 rounded-2xl font-bold cursor-not-allowed">
+            <Lock size={20} /> 無新增權限
           </button>
         )}
       </div>
@@ -105,7 +121,7 @@ const JobList: React.FC<JobListProps> = ({ onAdd, onEdit, onView }) => {
         <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-[#b59a7a]" size={20} />
         <input
           type="text"
-          placeholder="搜尋村民姓名或工單編號..."
+          placeholder="搜尋村民電話、姓名或工單編號..."
           className="w-full pl-14 pr-6 py-4 ac-bubble border-none font-bold text-lg outline-none focus:ring-4 focus:ring-[#78b833]/10 transition-all"
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
@@ -115,7 +131,7 @@ const JobList: React.FC<JobListProps> = ({ onAdd, onEdit, onView }) => {
       {filtered.length === 0 ? (
         <div className="py-20 text-center text-slate-300">
            <div className="mb-4 text-4xl">🥥</div>
-           <p className="font-bold">目前沒有任務紀錄</p>
+           <p className="font-bold">目前沒有符合的任務</p>
            {canWrite && <p className="text-xs mt-2">去喝杯咖啡，或新增一筆？</p>}
         </div>
       ) : (
@@ -145,7 +161,7 @@ const JobList: React.FC<JobListProps> = ({ onAdd, onEdit, onView }) => {
                 </div>
                 <div className="text-right pt-6">
                   <div className="text-2xl font-black text-[#78b833]">
-                    ${getTotalAmount(job).toLocaleString()}
+                    ${getTotalAmount(job)}
                   </div>
                 </div>
               </div>

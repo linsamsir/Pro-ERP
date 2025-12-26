@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Home, Users, ClipboardList, Menu, Tent, Crown, PieChart, Activity, LogOut, User as UserIcon } from 'lucide-react';
 import { auth } from '../services/auth';
@@ -57,7 +56,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onNavigate }) => 
             <h1 className="text-[#5d4a36] text-2xl font-black">清潔小村</h1>
             <div className="mt-2 inline-flex items-center gap-2 bg-white px-3 py-1 rounded-full border border-[#e6e0c6]">
                <UserIcon size={12} className="text-[#b59a7a]"/>
-               <span className="text-xs font-bold text-[#5d4a36]">{user?.name} ({user?.role === 'OWNER' ? '村長' : '幫手'})</span>
+               <span className="text-xs font-bold text-[#5d4a36]">{user?.name} ({user?.role === 'BOSS' ? '村長' : '幫手'})</span>
             </div>
           </div>
           

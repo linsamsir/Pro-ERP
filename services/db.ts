@@ -10,7 +10,6 @@ const STORAGE_KEYS = {
   L2_ASSETS: 'erp_l2_assets',
   L2_STOCK: 'erp_l2_stock',
   L2_LABOR: 'erp_l2_labor',
-  USERS: 'erp_users_v1',
   AUDIT_LOGS: 'erp_audit_logs_v1'
 };
 
@@ -29,7 +28,7 @@ const getCurrentActor = () => {
     const session = localStorage.getItem('erp_session_v1');
     if (session) return JSON.parse(session) as User;
   } catch {}
-  return { id: 'sys', name: 'System', role: 'OWNER' as UserRole }; // Fallback
+  return { id: 'sys', name: 'System', role: 'BOSS' as UserRole }; // Fallback
 };
 
 const createAuditLog = (
@@ -40,6 +39,10 @@ const createAuditLog = (
   diff?: AuditLog['diff']
 ) => {
   const actor = getCurrentActor();
+  // Don't log Decoy actions in main business logs if we want to keep them clean, 
+  // but for security "Audit" usually means logging EVERYTHING. 
+  // Let's log it.
+  
   const logs = getStorage<AuditLog>(STORAGE_KEYS.AUDIT_LOGS);
   
   const newLog: AuditLog = {
@@ -82,25 +85,12 @@ const DEFAULT_L2_LABOR: L2LaborConfig = {
 
 export const db = {
   users: {
-    getAll: () => getStorage<User>(STORAGE_KEYS.USERS),
-    init: () => {
-      const users = getStorage<User>(STORAGE_KEYS.USERS);
-      if (users.length === 0) {
-        // Initialize Default Users
-        // Password "admin" -> HASH_YWRtaW4=
-        // Password "staff" -> HASH_c3RhZmY=
-        const defaults: User[] = [
-          { id: 'u1', username: 'admin', name: '老闆', role: 'OWNER', passwordHash: 'HASH_YWRtaW4=' },
-          { id: 'u2', username: 'staff', name: '夥伴', role: 'STAFF', passwordHash: 'HASH_c3RhZmY=' }
-        ];
-        saveStorage(STORAGE_KEYS.USERS, defaults);
-      }
-    }
+    // Deprecated: Using auth.ts static users for Level 0 strictness
+    init: () => {} 
   },
   audit: {
     getAll: () => getStorage<AuditLog>(STORAGE_KEYS.AUDIT_LOGS),
     log: (actor: User, module: any, action: any, target: any, summary: string, diff?: any) => {
-        // Manual log entry access
         const logs = getStorage<AuditLog>(STORAGE_KEYS.AUDIT_LOGS);
         logs.push({
             id: `LOG-${Date.now()}`,
@@ -116,11 +106,16 @@ export const db = {
     get: (id: string) => getStorage<Customer>(STORAGE_KEYS.CUSTOMERS).find(c => c.customer_id === id && !c.deleted_at),
     delete: (id: string) => {
       const all = getStorage<Customer>(STORAGE_KEYS.CUSTOMERS);
-      const target = all.find(c => c.customer_id === id);
-      if (target) {
+      const index = all.findIndex(c => c.customer_id === id);
+      if (index >= 0) {
+        const target = all[index];
+        // Capture state before delete for diff
+        const beforeState = JSON.parse(JSON.stringify(target));
+        
         target.deleted_at = new Date().toISOString();
+        all[index] = target; // Update in place
         saveStorage(STORAGE_KEYS.CUSTOMERS, all);
-        createAuditLog('CUSTOMER', 'DELETE', { entityType: 'Customer', entityId: id, entityName: target.displayName }, `刪除村民: ${target.displayName}`);
+        createAuditLog('CUSTOMER', 'DELETE', { entityType: 'Customer', entityId: id, entityName: target.displayName }, `刪除村民: ${target.displayName}`, { before: beforeState });
       }
     },
     save: (customer: Customer) => {
@@ -165,11 +160,15 @@ export const db = {
     get: (id: string) => getStorage<Job>(STORAGE_KEYS.JOBS).find(j => j.jobId === id && !j.deletedAt),
     delete: (id: string) => {
       const all = getStorage<Job>(STORAGE_KEYS.JOBS);
-      const target = all.find(j => j.jobId === id);
-      if (target) {
+      const index = all.findIndex(j => j.jobId === id);
+      if (index >= 0) {
+        const target = all[index];
+        const beforeState = JSON.parse(JSON.stringify(target));
+        
         target.deletedAt = new Date().toISOString();
+        all[index] = target;
         saveStorage(STORAGE_KEYS.JOBS, all);
-        createAuditLog('JOB', 'DELETE', { entityType: 'Job', entityId: id, entityName: target.contactPerson }, `刪除工單: ${target.serviceDate} ${target.contactPerson}`);
+        createAuditLog('JOB', 'DELETE', { entityType: 'Job', entityId: id, entityName: target.contactPerson }, `刪除工單: ${target.serviceDate} ${target.contactPerson}`, { before: beforeState });
       }
     },
     save: async (job: Job, options: { skipAi?: boolean } = {}) => {
@@ -240,9 +239,11 @@ export const db = {
     },
     delete: (id: string) => {
       const list = getStorage<Expense>(STORAGE_KEYS.EXPENSES);
-      const target = list.find(e => e.id === id);
-      if (target) {
+      const index = list.findIndex(e => e.id === id);
+      if (index >= 0) {
+        const target = list[index];
         target.deletedAt = new Date().toISOString();
+        list[index] = target;
         saveStorage(STORAGE_KEYS.EXPENSES, list);
         createAuditLog('EXPENSE', 'DELETE', { entityType: 'Expense', entityId: id }, `刪除支出: $${target.amount}`);
       }
@@ -316,6 +317,3 @@ export const db = {
     }
   }
 };
-
-// Auto Init
-db.users.init();

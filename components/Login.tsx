@@ -44,7 +44,7 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
             <Tent size={48} />
           </div>
           <h1 className="text-2xl font-black text-[#5d4a36]">清潔小村 ERP</h1>
-          <p className="text-[#b59a7a] font-bold text-sm mt-1">請登入以開始今日任務</p>
+          <p className="text-[#b59a7a] font-bold text-sm mt-1">Authorized Personnel Only</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -85,13 +85,12 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
             disabled={loading}
             className="w-full btn-primary py-4 rounded-2xl text-xl shadow-lg mt-4 flex justify-center"
           >
-            {loading ? '登入中...' : <span className="flex items-center gap-2">進入村莊 <ArrowRight size={20}/></span>}
+            {loading ? '驗證中...' : <span className="flex items-center gap-2">進入系統 <ArrowRight size={20}/></span>}
           </button>
         </form>
 
         <div className="mt-8 text-center">
-          <p className="text-xs text-slate-300 font-bold">Level 0 Prototype</p>
-          <p className="text-xs text-slate-300">預設帳號: admin / admin</p>
+          <p className="text-xs text-slate-300 font-bold">Secure Access Level 0</p>
         </div>
       </div>
     </div>

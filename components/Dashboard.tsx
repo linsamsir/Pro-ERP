@@ -3,7 +3,7 @@ import React from 'react';
 import { db } from '../services/db';
 import { Customer } from '../types';
 import { auth } from '../services/auth';
-import { Search, Phone, UserPlus, ArrowRight, Tent, Star, X, User, Lock } from 'lucide-react';
+import { Search, Phone, UserPlus, ArrowRight, Tent, Star, X, User, Lock, Eye } from 'lucide-react';
 
 interface DashboardProps {
   onStartReport: (customer: Customer, phone?: string) => void;
@@ -64,12 +64,15 @@ const Dashboard: React.FC<DashboardProps> = ({ onStartReport, onAddCustomer }) =
     setFoundCustomer(null);
   };
 
-  const getPrimaryPhone = (c: Customer) => c.phones.find(p => p.isPrimary)?.number || c.phones[0]?.number;
+  const getPrimaryPhone = (c: Customer) => {
+    const raw = c.phones.find(p => p.isPrimary)?.number || c.phones[0]?.number;
+    return auth.maskSensitiveData(raw, 'phone');
+  };
 
   const renderFoundCard = () => (
     <div 
       onClick={() => canWrite && foundCustomer && onStartReport(foundCustomer)}
-      className={`bg-white border-4 border-[#78b833] p-6 rounded-[2rem] shadow-lg animate-pop relative overflow-hidden group transition-all ${canWrite ? 'cursor-pointer active:scale-[0.98]' : 'cursor-not-allowed opacity-80'}`}
+      className={`bg-white border-4 border-[#78b833] p-6 rounded-[2rem] shadow-lg animate-pop relative overflow-hidden group transition-all ${canWrite ? 'cursor-pointer active:scale-[0.98]' : 'cursor-default opacity-90'}`}
     >
        <div className="absolute right-0 top-0 p-3 bg-[#78b833] text-white rounded-bl-2xl font-black text-xs z-10">
          已建檔村民
@@ -95,7 +98,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onStartReport, onAddCustomer }) =
 
        <button 
          disabled={!canWrite}
-         className={`w-full py-4 rounded-2xl font-black text-xl transition-all flex items-center justify-center gap-3 ${canWrite ? 'bg-[#78b833] text-white shadow-[0_4px_0_#4a7a1f] active:translate-y-[4px] active:shadow-none' : 'bg-slate-200 text-slate-400'}`}
+         className={`w-full py-4 rounded-2xl font-black text-xl transition-all flex items-center justify-center gap-3 ${canWrite ? 'bg-[#78b833] text-white shadow-[0_4px_0_#4a7a1f] active:translate-y-[4px] active:shadow-none' : 'bg-slate-100 text-slate-400 cursor-not-allowed'}`}
        >
          {canWrite ? (
            <>
@@ -104,7 +107,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onStartReport, onAddCustomer }) =
            </>
          ) : (
            <>
-             <Lock size={20} /> 檢視模式 (無寫入權限)
+             <Eye size={20} /> 僅供檢視 (無操作權限)
            </>
          )}
        </button>
@@ -122,7 +125,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onStartReport, onAddCustomer }) =
        <button 
          onClick={() => canWrite && onAddCustomer(phoneInput)}
          disabled={!canWrite}
-         className={`w-full py-4 rounded-2xl font-black text-xl transition-all flex items-center justify-center gap-3 ${canWrite ? 'bg-orange-400 text-white shadow-[0_4px_0_#c2410c] active:translate-y-[4px] active:shadow-none' : 'bg-slate-200 text-slate-400'}`}
+         className={`w-full py-4 rounded-2xl font-black text-xl transition-all flex items-center justify-center gap-3 ${canWrite ? 'bg-orange-400 text-white shadow-[0_4px_0_#c2410c] active:translate-y-[4px] active:shadow-none' : 'bg-slate-100 text-slate-400 cursor-not-allowed'}`}
        >
          {canWrite ? <><UserPlus size={24} /> 新增村民並開始回報</> : <><Lock size={20} /> 無新增權限</>}
        </button>

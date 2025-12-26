@@ -1,6 +1,7 @@
 
 import React from 'react';
 import { db } from '../services/db';
+import { auth } from '../services/auth';
 import { AuditLog } from '../types';
 import { Search, Filter, ChevronDown, ChevronRight, Activity, Download } from 'lucide-react';
 
@@ -52,15 +53,43 @@ const Changelog: React.FC = () => {
 
   const renderDiff = (diff: any) => {
     if (!diff) return null;
+    
+    // Mask sensitive fields in diff for STAFF
+    let displayDiff = diff;
+    const user = auth.getCurrentUser();
+    
+    if (user?.role === 'STAFF') {
+        const maskObj = (obj: any) => {
+            if (!obj) return obj;
+            const masked = { ...obj };
+            // Recursive or manual masking of known sensitive fields in DB objects
+            // Simple generic masking for "amount", "total_amount", "totalPaid", "phone", "addresses"
+            const sensitiveKeys = ['amount', 'total_amount', 'totalPaid', 'cost', 'revenue', 'netProfit', 'phones', 'addresses', 'financial', 'consumables'];
+            
+            for (const key in masked) {
+                if (sensitiveKeys.includes(key)) {
+                    masked[key] = '******';
+                } else if (typeof masked[key] === 'object') {
+                    masked[key] = maskObj(masked[key]);
+                }
+            }
+            return masked;
+        };
+        displayDiff = {
+            before: maskObj(diff.before),
+            after: maskObj(diff.after)
+        };
+    }
+
     return (
       <div className="grid grid-cols-2 gap-4 text-xs font-mono bg-slate-800 text-green-400 p-4 rounded-xl mt-2 overflow-x-auto">
         <div className="border-r border-slate-600 pr-2">
           <div className="text-slate-500 mb-1 font-bold">BEFORE</div>
-          <pre>{JSON.stringify(diff.before, null, 2) || '-'}</pre>
+          <pre>{JSON.stringify(displayDiff.before, null, 2) || '-'}</pre>
         </div>
         <div className="pl-2">
           <div className="text-slate-500 mb-1 font-bold">AFTER</div>
-          <pre>{JSON.stringify(diff.after, null, 2) || '-'}</pre>
+          <pre>{JSON.stringify(displayDiff.after, null, 2) || '-'}</pre>
         </div>
       </div>
     );
@@ -85,9 +114,11 @@ const Changelog: React.FC = () => {
           </h2>
           <p className="text-note font-bold mt-1 ml-1">追溯所有操作歷史 (Audit Log)</p>
         </div>
-        <button onClick={exportCSV} className="bg-white border-2 border-[#e8dcb9] text-[#5d4a36] px-4 py-2 rounded-xl font-bold flex items-center gap-2 hover:bg-[#fffdf5]">
-          <Download size={18}/> 匯出 CSV
-        </button>
+        {auth.isAdmin() && (
+          <button onClick={exportCSV} className="bg-white border-2 border-[#e8dcb9] text-[#5d4a36] px-4 py-2 rounded-xl font-bold flex items-center gap-2 hover:bg-[#fffdf5]">
+            <Download size={18}/> 匯出 CSV
+          </button>
+        )}
       </div>
 
       {/* Filters */}

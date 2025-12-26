@@ -39,9 +39,16 @@ const CustomerList: React.FC<CustomerListProps> = ({ onAdd, onEdit }) => {
     setViewingCustomer(null);
   };
 
-  // Helpers
-  const getPrimaryPhone = (c: Customer) => c.phones.find(p => p.isPrimary)?.number || c.phones[0]?.number || '無電話';
-  const getPrimaryAddress = (c: Customer) => c.addresses.find(a => a.isPrimary)?.text || c.addresses[0]?.text || '無地址';
+  // Helpers with Masking
+  const getPrimaryPhone = (c: Customer) => {
+    const raw = c.phones.find(p => p.isPrimary)?.number || c.phones[0]?.number || '無電話';
+    return auth.maskSensitiveData(raw, 'phone');
+  };
+  const getPrimaryAddress = (c: Customer) => {
+    const raw = c.addresses.find(a => a.isPrimary)?.text || c.addresses[0]?.text || '無地址';
+    return auth.maskSensitiveData(raw, 'address');
+  };
+  
   const getReferrerName = (refId: string) => customers.find(c => c.customer_id === refId)?.displayName || '未知村民';
 
   // Tag Aggregation Logic
@@ -131,6 +138,7 @@ const CustomerList: React.FC<CustomerListProps> = ({ onAdd, onEdit }) => {
   const JobHistoryPopup = ({ jobId }: { jobId: string }) => {
     const job = jobs.find(j => j.jobId === jobId);
     if (!job) return null;
+    const amount = job.financial?.total_amount || job.totalPaid || 0;
 
     return (
        <div className="absolute inset-x-4 top-1/2 -translate-y-1/2 bg-white rounded-3xl p-6 shadow-2xl border-4 border-[#e8dcb9] z-20 animate-in zoom-in-95">
@@ -144,20 +152,12 @@ const CustomerList: React.FC<CustomerListProps> = ({ onAdd, onEdit }) => {
           <div className="space-y-3">
              <div className="flex justify-between items-center bg-[#fcfdec] p-3 rounded-xl border border-[#d9e6c3]">
                 <span className="text-sm font-bold text-[#5a8d26]">實收金額</span>
-                <span className="text-xl font-black text-[#78b833]">${(job.financial?.total_amount || job.totalPaid || 0).toLocaleString()}</span>
+                <span className="text-xl font-black text-[#78b833]">${auth.maskSensitiveData(amount.toLocaleString(), 'money')}</span>
              </div>
              <div>
                 <span className="text-xs font-bold text-slate-400">服務項目</span>
                 <div className="flex gap-2 mt-1">
                    {job.serviceItems.map(s => <span key={s} className="text-xs bg-blue-50 text-blue-600 px-2 py-1 rounded border border-blue-100">{s}</span>)}
-                </div>
-             </div>
-             <div>
-                <span className="text-xs font-bold text-slate-400">標籤摘要</span>
-                <div className="flex flex-wrap gap-1 mt-1">
-                   {[...job.tankConditionTags, ...job.subjective_tags].slice(0, 5).map(t => (
-                     <span key={t} className="text-[10px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full border border-slate-200">{t}</span>
-                   ))}
                 </div>
              </div>
              {job.serviceNote && (
@@ -203,7 +203,7 @@ const CustomerList: React.FC<CustomerListProps> = ({ onAdd, onEdit }) => {
                        <div className="space-y-2">
                           {viewingCustomer.phones.map((p, i) => (
                              <div key={i} className="flex justify-between items-center">
-                                <span className={`font-black ${p.isPrimary ? 'text-xl text-[#5d4a36]' : 'text-sm text-slate-400'}`}>{p.number}</span>
+                                <span className={`font-black ${p.isPrimary ? 'text-xl text-[#5d4a36]' : 'text-sm text-slate-400'}`}>{auth.maskSensitiveData(p.number, 'phone')}</span>
                                 <span className="text-[10px] bg-white px-2 py-0.5 rounded border text-slate-400">{p.label}</span>
                              </div>
                           ))}
@@ -275,7 +275,9 @@ const CustomerList: React.FC<CustomerListProps> = ({ onAdd, onEdit }) => {
                                     {job.serviceItems.includes(ServiceItem.PIPE) && <span className="w-2 h-2 rounded-full bg-orange-400"></span>}
                                  </div>
                               </div>
-                              <div className="font-black text-[#5d4a36] group-hover:text-orange-500">${(job.financial?.total_amount || job.totalPaid || 0).toLocaleString()}</div>
+                              <div className="font-black text-[#5d4a36] group-hover:text-orange-500">
+                                ${auth.maskSensitiveData((job.financial?.total_amount || job.totalPaid || 0).toLocaleString(), 'money')}
+                              </div>
                            </button>
                         )) : <div className="text-xs text-slate-400 italic py-4 text-center bg-slate-50 rounded-xl">尚無完工紀錄</div>}
                      </div>
@@ -309,7 +311,7 @@ const CustomerList: React.FC<CustomerListProps> = ({ onAdd, onEdit }) => {
             <Plus size={24} /> 新增村民
           </button>
         ) : (
-          <button disabled className="bg-slate-200 text-slate-400 px-8 py-3 flex items-center gap-2 rounded-2xl font-bold cursor-not-allowed">
+          <button disabled className="bg-slate-100 text-slate-400 px-8 py-3 flex items-center gap-2 rounded-2xl font-bold cursor-not-allowed">
             <Lock size={20} /> 無新增權限
           </button>
         )}

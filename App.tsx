@@ -14,8 +14,20 @@ import Login from './components/Login';
 import Changelog from './components/Changelog';
 import { Customer, Job } from './types';
 import { auth } from './services/auth';
+import { AlertTriangle } from 'lucide-react';
 
 type View = 'dashboard' | 'boss_dashboard' | 'analysis' | 'customers' | 'customer_add' | 'customer_edit' | 'jobs' | 'job_add' | 'job_edit' | 'job_view' | 'import' | 'changelog';
+
+// --- Decoy View for Admin ---
+const DecoyView = () => (
+  <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center text-slate-500 p-8">
+    <AlertTriangle size={64} className="mb-4 text-slate-700"/>
+    <h1 className="text-2xl font-bold mb-2">System Maintenance</h1>
+    <p>The system is currently in read-only maintenance mode.</p>
+    <p>Please contact the system administrator.</p>
+    <button onClick={() => auth.logout()} className="mt-8 text-sm hover:text-slate-300">Logout</button>
+  </div>
+);
 
 const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = React.useState(auth.isAuthenticated());
@@ -39,6 +51,12 @@ const App: React.FC = () => {
 
   if (!isAuthenticated) {
     return <Login onLoginSuccess={handleLoginSuccess} />;
+  }
+
+  // Handle Decoy
+  const user = auth.getCurrentUser();
+  if (user?.role === 'DECOY') {
+    return <DecoyView />;
   }
 
   const renderContent = () => {

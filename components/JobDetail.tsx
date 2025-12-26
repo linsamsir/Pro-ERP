@@ -2,6 +2,7 @@
 import React from 'react';
 import { Job, Customer, JobStatus, ServiceItem, AvatarType } from '../types';
 import { db } from '../services/db';
+import { auth } from '../services/auth';
 import { 
   ArrowLeft, Edit3, Calendar, Clock, MapPin, Phone, 
   Wrench, Beaker, DollarSign, FileText, Building2, CheckCircle2, User, Share2, Printer, Zap, ArrowRight, Trash2, Car, Droplets, Tag, CreditCard, Receipt
@@ -15,6 +16,7 @@ interface JobDetailProps {
 
 const JobDetail: React.FC<JobDetailProps> = ({ job, onBack, onEdit }) => {
   const customer = db.customers.get(job.customerId);
+  const canWrite = auth.canWrite();
 
   const getAvatarInfo = (type: AvatarType) => {
     switch (type) {
@@ -56,10 +58,12 @@ const JobDetail: React.FC<JobDetailProps> = ({ job, onBack, onEdit }) => {
   };
 
   const getTotalAmount = () => {
-    return job.financial?.total_amount ?? job.totalPaid ?? 0;
+    const val = job.financial?.total_amount ?? job.totalPaid ?? 0;
+    return auth.maskSensitiveData(val.toLocaleString(), 'money');
   };
 
   const handleDelete = () => {
+    if (!canWrite) return;
     if (window.confirm("確定要刪除這筆服務紀錄嗎？")) {
       db.jobs.delete(job.jobId);
       onBack();
@@ -75,14 +79,16 @@ const JobDetail: React.FC<JobDetailProps> = ({ job, onBack, onEdit }) => {
           </button>
           <h2 className="text-3xl font-black text-[#5d4a36]">任務詳情</h2>
         </div>
-        <div className="flex gap-3">
-           <button onClick={handleDelete} className="p-3 bg-red-50 border-2 border-red-100 rounded-2xl text-red-500 hover:bg-red-100 transition-colors">
-              <Trash2 size={20} />
-           </button>
-           <button onClick={onEdit} className="bg-blue-50 text-blue-600 px-6 py-3 rounded-2xl font-black flex items-center gap-2 border-2 border-blue-100 hover:bg-blue-100 transition-all shadow-sm">
-             <Edit3 size={20} /> 修改
-           </button>
-        </div>
+        {canWrite && (
+          <div className="flex gap-3">
+             <button onClick={handleDelete} className="p-3 bg-red-50 border-2 border-red-100 rounded-2xl text-red-500 hover:bg-red-100 transition-colors">
+                <Trash2 size={20} />
+             </button>
+             <button onClick={onEdit} className="bg-blue-50 text-blue-600 px-6 py-3 rounded-2xl font-black flex items-center gap-2 border-2 border-blue-100 hover:bg-blue-100 transition-all shadow-sm">
+               <Edit3 size={20} /> 修改
+             </button>
+          </div>
+        )}
       </header>
 
       <div className="space-y-6">
@@ -99,7 +105,7 @@ const JobDetail: React.FC<JobDetailProps> = ({ job, onBack, onEdit }) => {
              </div>
              <div className="text-right">
                 <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total Amount</div>
-                <div className="text-3xl font-black text-[#78b833]">${getTotalAmount().toLocaleString()}</div>
+                <div className="text-3xl font-black text-[#78b833]">${getTotalAmount()}</div>
              </div>
           </div>
           
@@ -158,7 +164,7 @@ const JobDetail: React.FC<JobDetailProps> = ({ job, onBack, onEdit }) => {
                       {job.financial?.extra_items?.map((ex, i) => (
                         <div key={i} className="flex justify-between text-xs font-bold text-orange-600">
                            <span>{ex.name}</span>
-                           <span>+${ex.amount}</span>
+                           <span>+${auth.maskSensitiveData(ex.amount, 'money')}</span>
                         </div>
                       ))}
                    </div>

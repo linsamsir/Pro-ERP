@@ -263,7 +263,7 @@ export interface L2LaborConfig {
 
 // --- Level 0: Auth & Audit ---
 
-export type UserRole = 'OWNER' | 'STAFF';
+export type UserRole = 'BOSS' | 'MANAGER' | 'STAFF' | 'DECOY';
 
 export interface User {
   id: string;
