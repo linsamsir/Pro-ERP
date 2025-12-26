@@ -4,6 +4,7 @@ import { db } from '../services/db';
 import { L2Engine, L2JobAnalysis } from '../services/l2Engine';
 import { Job, L2Asset, L2StockLog, L2LaborConfig, JobStatus } from '../types';
 import { auth } from '../services/auth';
+import ConfirmDialog from './ConfirmDialog';
 import { 
   PieChart, Truck, Package, TrendingUp, Download, 
   Calendar, ArrowRight, Eye, EyeOff, Plus, Trash2, RefreshCw
@@ -22,6 +23,9 @@ const AnalysisWorkspace: React.FC = () => {
   const [l2Labor, setL2Labor] = React.useState<L2LaborConfig>(db.l2.labor.get());
   const [jobs, setJobs] = React.useState<Job[]>([]);
   const [analyzedJobs, setAnalyzedJobs] = React.useState<L2JobAnalysis[]>([]);
+  
+  // Delete States
+  const [deleteTarget, setDeleteTarget] = React.useState<{ type: 'asset' | 'stock', id: string } | null>(null);
 
   const canWrite = auth.canWrite(); // Permission check for edit buttons
 
@@ -89,6 +93,17 @@ const AnalysisWorkspace: React.FC = () => {
     refresh();
   };
 
+  const confirmDelete = () => {
+    if (!deleteTarget) return;
+    if (deleteTarget.type === 'asset') {
+      db.l2.assets.delete(deleteTarget.id);
+    } else {
+      db.l2.stock.delete(deleteTarget.id);
+    }
+    refresh();
+    setDeleteTarget(null);
+  };
+
   // Tab Definitions with Dual Naming Strategy
   const tabs = [
     { id: 'dashboard', icon: TrendingUp, label: '損益分析總覽', mobileLabel: '損益' },
@@ -98,7 +113,16 @@ const AnalysisWorkspace: React.FC = () => {
 
   return (
     <div className="max-w-6xl mx-auto pb-20 space-y-8 animate-pop">
-      
+      <ConfirmDialog 
+        isOpen={!!deleteTarget}
+        title={deleteTarget?.type === 'asset' ? "刪除資產?" : "刪除進貨紀錄?"}
+        message="確認刪除此項目。刪除後將影響歷史成本計算。"
+        isDanger
+        confirmText="刪除"
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteTarget(null)}
+      />
+
       {/* 1. Header & Controls */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
         <div>
@@ -236,7 +260,7 @@ const AnalysisWorkspace: React.FC = () => {
                                <div className="text-lg font-bold text-[#5d4a36]">${auth.maskSensitiveData(a.cost.toLocaleString(), 'money')}</div>
                                <div className="text-xs font-bold text-red-400">月折舊 ${auth.maskSensitiveData(Math.round(a.cost/a.lifespanMonths).toLocaleString(), 'money')}</div>
                             </div>
-                            {canWrite && <button onClick={() => { if(confirm('刪除?')) { db.l2.assets.delete(a.id); refresh(); }}} className="text-slate-300 hover:text-red-500"><Trash2 size={20}/></button>}
+                            {canWrite && <button onClick={() => setDeleteTarget({type: 'asset', id: a.id})} className="text-slate-300 hover:text-red-500"><Trash2 size={20}/></button>}
                          </div>
                       </div>
                    ))}
@@ -296,7 +320,7 @@ const AnalysisWorkspace: React.FC = () => {
                                <td className="p-5 text-right font-mono font-bold text-lg">${auth.maskSensitiveData(l.totalCost, 'money')}</td>
                                <td className="p-5 text-right font-mono font-bold">{l.quantity * l.yieldPerUnit}</td>
                                <td className="p-5 text-right">
-                                 {canWrite && <button onClick={() => { db.l2.stock.delete(l.id); refresh(); }} className="text-slate-300 hover:text-red-500"><Trash2 size={20}/></button>}
+                                 {canWrite && <button onClick={() => setDeleteTarget({type: 'stock', id: l.id})} className="text-slate-300 hover:text-red-500"><Trash2 size={20}/></button>}
                                </td>
                             </tr>
                          ))}

@@ -3,6 +3,7 @@ import React from 'react';
 import { Job, JobStatus, AvatarType, ServiceItem } from '../types';
 import { db } from '../services/db';
 import { auth } from '../services/auth';
+import ConfirmDialog from './ConfirmDialog';
 import { Plus, Search, Calendar, User, Clock, Edit3, Trash2, DollarSign, FileText, ChevronRight, Droplets, Wrench, Lock } from 'lucide-react';
 
 interface JobListProps {
@@ -14,6 +15,7 @@ interface JobListProps {
 const JobList: React.FC<JobListProps> = ({ onAdd, onEdit, onView }) => {
   const [jobs, setJobs] = React.useState<Job[]>([]);
   const [searchTerm, setSearchTerm] = React.useState('');
+  const [deleteId, setDeleteId] = React.useState<string | null>(null);
   const canWrite = auth.canWrite();
 
   React.useEffect(() => {
@@ -42,12 +44,12 @@ const JobList: React.FC<JobListProps> = ({ onAdd, onEdit, onView }) => {
     return false;
   }).sort((a, b) => new Date(b.serviceDate).getTime() - new Date(a.serviceDate).getTime());
 
-  const handleDelete = (id: string) => {
-    if (!canWrite) return;
-    if (!confirm("確定要刪除這筆完工紀錄嗎？")) return;
-    db.jobs.delete(id);
-    const all = db.jobs.getAll();
-    setJobs(all);
+  const handleDelete = () => {
+    if (deleteId) {
+      db.jobs.delete(deleteId);
+      setJobs(db.jobs.getAll());
+      setDeleteId(null);
+    }
   };
 
   const getAvatarInfo = (type: AvatarType) => {
@@ -102,6 +104,16 @@ const JobList: React.FC<JobListProps> = ({ onAdd, onEdit, onView }) => {
 
   return (
     <div className="space-y-8 px-4">
+      <ConfirmDialog 
+        isOpen={!!deleteId}
+        title="刪除任務紀錄？"
+        message="這筆完工紀錄將被刪除，但仍可在變更紀錄中檢視。"
+        isDanger
+        confirmText="確認刪除"
+        onConfirm={handleDelete}
+        onCancel={() => setDeleteId(null)}
+      />
+
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <h2 className="text-4xl font-black text-[#5d4a36] flex items-center gap-3">
           <FileText className="text-[#78b833]" size={32} /> 村莊任務
@@ -193,7 +205,7 @@ const JobList: React.FC<JobListProps> = ({ onAdd, onEdit, onView }) => {
                  {canWrite && (
                    <div className="flex items-center gap-2">
                      <button 
-                       onClick={(e) => { e.stopPropagation(); handleDelete(job.jobId); }} 
+                       onClick={(e) => { e.stopPropagation(); setDeleteId(job.jobId); }} 
                        className="p-1.5 text-slate-200 hover:text-red-400 transition-colors"
                        title="刪除"
                      >

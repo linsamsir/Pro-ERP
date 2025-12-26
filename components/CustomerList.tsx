@@ -3,6 +3,7 @@ import React from 'react';
 import { Customer, AvatarType, Job, JobStatus, ServiceItem } from '../types';
 import { db } from '../services/db';
 import { auth } from '../services/auth';
+import ConfirmDialog from './ConfirmDialog';
 import { Plus, Search, MapPin, Phone, User, Edit3, Trash2, ChevronRight, Tag, Clock, Users, Building2, Share2, MessageCircle, Facebook, Instagram, Globe, Calendar, DollarSign, History, Lock } from 'lucide-react';
 
 interface CustomerListProps {
@@ -16,6 +17,7 @@ const CustomerList: React.FC<CustomerListProps> = ({ onAdd, onEdit }) => {
   const [searchTerm, setSearchTerm] = React.useState('');
   const [viewingCustomer, setViewingCustomer] = React.useState<Customer | null>(null);
   const [viewingJobId, setViewingJobId] = React.useState<string | null>(null);
+  const [deleteId, setDeleteId] = React.useState<string | null>(null);
   
   const canWrite = auth.canWrite();
 
@@ -31,12 +33,13 @@ const CustomerList: React.FC<CustomerListProps> = ({ onAdd, onEdit }) => {
     c.addresses.some(a => a.text.includes(searchTerm))
   );
 
-  const handleDelete = (id: string) => {
-    if (!canWrite) return;
-    if (!confirm("確定要刪除這位客戶嗎？此操作可由變更紀錄追溯。")) return;
-    db.customers.delete(id);
-    setCustomers(db.customers.getAll());
-    setViewingCustomer(null);
+  const handleDelete = () => {
+    if (deleteId) {
+      db.customers.delete(deleteId);
+      setCustomers(db.customers.getAll());
+      setViewingCustomer(null);
+      setDeleteId(null);
+    }
   };
 
   // Helpers with Masking
@@ -172,6 +175,16 @@ const CustomerList: React.FC<CustomerListProps> = ({ onAdd, onEdit }) => {
 
   return (
     <div className="space-y-8 px-4">
+      <ConfirmDialog 
+        isOpen={!!deleteId}
+        title="確認刪除村民？"
+        message="這位村民的資料將被移至垃圾桶，但可透過變更紀錄查詢。此操作無法直接還原。"
+        isDanger
+        confirmText="確認刪除"
+        onConfirm={handleDelete}
+        onCancel={() => setDeleteId(null)}
+      />
+
       {viewingCustomer && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
           <div className="ac-bubble bg-white w-full max-w-2xl max-h-[90vh] overflow-y-auto p-0 animate-in zoom-in-95 duration-200 relative">
@@ -291,7 +304,7 @@ const CustomerList: React.FC<CustomerListProps> = ({ onAdd, onEdit }) => {
                  <button onClick={() => onEdit(viewingCustomer)} className="ac-btn-green flex-1 py-3 flex items-center justify-center gap-2 text-lg">
                     <Edit3 size={20} /> 修改資料
                  </button>
-                 <button onClick={() => handleDelete(viewingCustomer.customer_id)} className="bg-white text-red-400 border-2 border-red-100 px-6 py-3 rounded-2xl font-bold hover:bg-red-50 transition-all">
+                 <button onClick={() => setDeleteId(viewingCustomer.customer_id)} className="bg-white text-red-400 border-2 border-red-100 px-6 py-3 rounded-2xl font-bold hover:bg-red-50 transition-all">
                     <Trash2 size={24} />
                  </button>
               </div>

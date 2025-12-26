@@ -3,6 +3,7 @@ import React from 'react';
 import { Job, Customer, JobStatus, ServiceItem, AvatarType } from '../types';
 import { db } from '../services/db';
 import { auth } from '../services/auth';
+import ConfirmDialog from './ConfirmDialog';
 import { 
   ArrowLeft, Edit3, Calendar, Clock, MapPin, Phone, 
   Wrench, Beaker, DollarSign, FileText, Building2, CheckCircle2, User, Share2, Printer, Zap, ArrowRight, Trash2, Car, Droplets, Tag, CreditCard, Receipt
@@ -17,6 +18,7 @@ interface JobDetailProps {
 const JobDetail: React.FC<JobDetailProps> = ({ job, onBack, onEdit }) => {
   const customer = db.customers.get(job.customerId);
   const canWrite = auth.canWrite();
+  const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false);
 
   const getAvatarInfo = (type: AvatarType) => {
     switch (type) {
@@ -63,15 +65,23 @@ const JobDetail: React.FC<JobDetailProps> = ({ job, onBack, onEdit }) => {
   };
 
   const handleDelete = () => {
-    if (!canWrite) return;
-    if (window.confirm("確定要刪除這筆服務紀錄嗎？")) {
-      db.jobs.delete(job.jobId);
-      onBack();
-    }
+    db.jobs.delete(job.jobId);
+    setShowDeleteConfirm(false);
+    onBack();
   };
 
   return (
     <div className="max-w-4xl mx-auto pb-40 px-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <ConfirmDialog 
+        isOpen={showDeleteConfirm}
+        title="刪除任務紀錄？"
+        message="這筆完工紀錄將被刪除，但仍可在變更紀錄中檢視。"
+        isDanger
+        confirmText="確認刪除"
+        onConfirm={handleDelete}
+        onCancel={() => setShowDeleteConfirm(false)}
+      />
+
       <header className="flex items-center justify-between mb-8">
         <div className="flex items-center gap-4">
           <button onClick={onBack} className="p-3 bg-white border-2 border-[#eeeada] rounded-2xl text-[#8c6e4a] shadow-sm hover:scale-105 transition-all">
@@ -81,7 +91,7 @@ const JobDetail: React.FC<JobDetailProps> = ({ job, onBack, onEdit }) => {
         </div>
         {canWrite && (
           <div className="flex gap-3">
-             <button onClick={handleDelete} className="p-3 bg-red-50 border-2 border-red-100 rounded-2xl text-red-500 hover:bg-red-100 transition-colors">
+             <button onClick={() => setShowDeleteConfirm(true)} className="p-3 bg-red-50 border-2 border-red-100 rounded-2xl text-red-500 hover:bg-red-100 transition-colors">
                 <Trash2 size={20} />
              </button>
              <button onClick={onEdit} className="bg-blue-50 text-blue-600 px-6 py-3 rounded-2xl font-black flex items-center gap-2 border-2 border-blue-100 hover:bg-blue-100 transition-all shadow-sm">

@@ -3,6 +3,7 @@ import React from 'react';
 import { db } from '../services/db';
 import { Job, Customer, JobStatus, Expense, AppSettings, L2LaborConfig } from '../types';
 import { auth } from '../services/auth';
+import ConfirmDialog from './ConfirmDialog';
 import { 
   TrendingUp, DollarSign, Target, Download, Activity, Users, Filter, CheckCircle2, XCircle,
   Settings, Plus, Droplets, Zap, ShieldCheck, Trash2, MessageCircle, HardHat, Package
@@ -229,6 +230,7 @@ const BossDashboard: React.FC = () => {
     return { start, end, type: 'this_month' };
   });
   const [activeTab, setActiveTab] = React.useState<TabType>('revenue');
+  const [deleteExpenseId, setDeleteExpenseId] = React.useState<string | null>(null);
   
   // Modals
   const [showSettings, setShowSettings] = React.useState(false);
@@ -372,12 +374,29 @@ const BossDashboard: React.FC = () => {
     refreshData();
   };
 
+  const handleDeleteExpense = () => {
+    if (deleteExpenseId) {
+      db.expenses.delete(deleteExpenseId);
+      refreshData();
+      setDeleteExpenseId(null);
+    }
+  };
+
   // Masking Helper
   const maskedVal = (val: number) => auth.maskSensitiveData(val.toLocaleString(), 'money');
 
   return (
     <div className="max-w-6xl mx-auto pb-20 space-y-8 animate-pop">
-      
+      <ConfirmDialog 
+        isOpen={!!deleteExpenseId}
+        title="刪除此筆支出？"
+        message="這筆支出紀錄將被刪除。請確認。"
+        isDanger
+        confirmText="刪除"
+        onConfirm={handleDeleteExpense}
+        onCancel={() => setDeleteExpenseId(null)}
+      />
+
       {/* 1. Header & Controls */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
         <div>
@@ -569,7 +588,7 @@ const BossDashboard: React.FC = () => {
                     </td>
                     <td className="p-5 text-body font-black text-red-400 text-right">${maskedVal(exp.amount)}</td>
                     <td className="p-5 text-center">
-                       {canWrite && <button onClick={() => { if(confirm('刪除此支出？')) { db.expenses.delete(exp.id); refreshData(); } }} className="text-slate-300 hover:text-red-500 p-2"><Trash2 size={16}/></button>}
+                       {canWrite && <button onClick={() => setDeleteExpenseId(exp.id)} className="text-slate-300 hover:text-red-500 p-2"><Trash2 size={16}/></button>}
                     </td>
                   </tr>
                 ))}

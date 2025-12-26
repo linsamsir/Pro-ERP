@@ -1,6 +1,8 @@
+
 import React from 'react';
 import { Home, Users, ClipboardList, Menu, Tent, Crown, PieChart, Activity, LogOut, User as UserIcon } from 'lucide-react';
 import { auth } from '../services/auth';
+import ConfirmDialog from './ConfirmDialog';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -10,6 +12,7 @@ interface LayoutProps {
 
 const Layout: React.FC<LayoutProps> = ({ children, activeView, onNavigate }) => {
   const [menuOpen, setMenuOpen] = React.useState(false);
+  const [showLogoutConfirm, setShowLogoutConfirm] = React.useState(false);
   const user = auth.getCurrentUser();
 
   const navItems = [
@@ -19,7 +22,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onNavigate }) => 
     { id: 'customers', label: '村民名冊', icon: Users, color: 'text-blue-500' },
     { id: 'jobs', label: '村莊任務', icon: ClipboardList, color: 'text-green-600' },
     { id: 'import', label: '移居中心', icon: Tent, color: 'text-purple-500' },
-    { id: 'changelog', label: '變更紀錄', icon: Activity, color: 'text-slate-500' }, // Level 0 Feature
+    { id: 'changelog', label: '變更紀錄', icon: Activity, color: 'text-slate-500' }, 
   ];
 
   const isActive = (id: string) => {
@@ -30,13 +33,22 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onNavigate }) => 
   };
 
   const handleLogout = () => {
-    if (confirm('確定要登出村莊嗎？')) {
-      auth.logout();
-    }
+    auth.logout();
+    setShowLogoutConfirm(false);
   };
 
   return (
     <div className="min-h-screen flex flex-col md:flex-row">
+      <ConfirmDialog 
+        isOpen={showLogoutConfirm}
+        title="準備離開村莊？"
+        message="登出後需要重新輸入帳號密碼才能進入。"
+        confirmText="登出"
+        isDanger
+        onConfirm={handleLogout}
+        onCancel={() => setShowLogoutConfirm(false)}
+      />
+
       {/* Mobile Header */}
       <div className="md:hidden bg-[#78b833] text-white p-4 flex justify-between items-center z-50 sticky top-0 border-b-4 border-[#5a8d26]">
         <span className="font-black text-xl flex items-center gap-2"><Tent size={24} /> Cleaning Village</span>
@@ -56,7 +68,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onNavigate }) => 
             <h1 className="text-[#5d4a36] text-2xl font-black">清潔小村</h1>
             <div className="mt-2 inline-flex items-center gap-2 bg-white px-3 py-1 rounded-full border border-[#e6e0c6]">
                <UserIcon size={12} className="text-[#b59a7a]"/>
-               <span className="text-xs font-bold text-[#5d4a36]">{user?.name} ({user?.role === 'BOSS' ? '村長' : '幫手'})</span>
+               <span className="text-xs font-bold text-[#5d4a36]">{user?.name} ({user?.role === 'BOSS' ? '村長' : user?.role === 'MANAGER' ? '闆娘' : '幫手'})</span>
             </div>
           </div>
           
@@ -82,7 +94,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onNavigate }) => 
 
           <div className="mt-auto pt-6 border-t-2 border-[#e6e0c6]">
             <button 
-              onClick={handleLogout}
+              onClick={() => setShowLogoutConfirm(true)}
               className="w-full flex items-center justify-center gap-2 text-[#b59a7a] hover:text-red-400 font-bold py-2 transition-colors"
             >
               <LogOut size={18}/> 登出系統
