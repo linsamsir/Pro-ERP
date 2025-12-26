@@ -2,7 +2,8 @@
 import React from 'react';
 import { db } from '../services/db';
 import { Customer } from '../types';
-import { Search, Phone, UserPlus, ArrowRight, Tent, Star, X, User } from 'lucide-react';
+import { auth } from '../services/auth';
+import { Search, Phone, UserPlus, ArrowRight, Tent, Star, X, User, Lock } from 'lucide-react';
 
 interface DashboardProps {
   onStartReport: (customer: Customer, phone?: string) => void;
@@ -15,6 +16,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onStartReport, onAddCustomer }) =
   const [phoneInput, setPhoneInput] = React.useState('');
   const [foundCustomer, setFoundCustomer] = React.useState<Customer | null>(null);
   const [searchState, setSearchState] = React.useState<SearchState>('IDLE');
+  
+  const canWrite = auth.canWrite();
 
   // Normalize: Remove non-digits
   const normalizePhone = (p: string) => p.replace(/[^\d]/g, '');
@@ -65,8 +68,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onStartReport, onAddCustomer }) =
 
   const renderFoundCard = () => (
     <div 
-      onClick={() => foundCustomer && onStartReport(foundCustomer)}
-      className="bg-white border-4 border-[#78b833] p-6 rounded-[2rem] shadow-lg animate-pop relative overflow-hidden group cursor-pointer active:scale-[0.98] transition-all"
+      onClick={() => canWrite && foundCustomer && onStartReport(foundCustomer)}
+      className={`bg-white border-4 border-[#78b833] p-6 rounded-[2rem] shadow-lg animate-pop relative overflow-hidden group transition-all ${canWrite ? 'cursor-pointer active:scale-[0.98]' : 'cursor-not-allowed opacity-80'}`}
     >
        <div className="absolute right-0 top-0 p-3 bg-[#78b833] text-white rounded-bl-2xl font-black text-xs z-10">
          已建檔村民
@@ -91,10 +94,19 @@ const Dashboard: React.FC<DashboardProps> = ({ onStartReport, onAddCustomer }) =
        </div>
 
        <button 
-         className="w-full bg-[#78b833] text-white py-4 rounded-2xl font-black text-xl shadow-[0_4px_0_#4a7a1f] active:translate-y-[4px] active:shadow-none transition-all flex items-center justify-center gap-3"
+         disabled={!canWrite}
+         className={`w-full py-4 rounded-2xl font-black text-xl transition-all flex items-center justify-center gap-3 ${canWrite ? 'bg-[#78b833] text-white shadow-[0_4px_0_#4a7a1f] active:translate-y-[4px] active:shadow-none' : 'bg-slate-200 text-slate-400'}`}
        >
-         <div className="bg-white/20 p-1 rounded-lg"><Tent size={20} /></div>
-         開始任務回報
+         {canWrite ? (
+           <>
+             <div className="bg-white/20 p-1 rounded-lg"><Tent size={20} /></div>
+             開始任務回報
+           </>
+         ) : (
+           <>
+             <Lock size={20} /> 檢視模式 (無寫入權限)
+           </>
+         )}
        </button>
     </div>
   );
@@ -108,10 +120,11 @@ const Dashboard: React.FC<DashboardProps> = ({ onStartReport, onAddCustomer }) =
        <p className="text-sm font-bold text-[#b59a7a] mb-6">這是一位新搬來的村民嗎？</p>
        
        <button 
-         onClick={() => onAddCustomer(phoneInput)}
-         className="w-full bg-orange-400 text-white py-4 rounded-2xl font-black text-xl shadow-[0_4px_0_#c2410c] active:translate-y-[4px] active:shadow-none transition-all flex items-center justify-center gap-3"
+         onClick={() => canWrite && onAddCustomer(phoneInput)}
+         disabled={!canWrite}
+         className={`w-full py-4 rounded-2xl font-black text-xl transition-all flex items-center justify-center gap-3 ${canWrite ? 'bg-orange-400 text-white shadow-[0_4px_0_#c2410c] active:translate-y-[4px] active:shadow-none' : 'bg-slate-200 text-slate-400'}`}
        >
-         <UserPlus size={24} /> 新增村民並開始回報
+         {canWrite ? <><UserPlus size={24} /> 新增村民並開始回報</> : <><Lock size={20} /> 無新增權限</>}
        </button>
     </div>
   );

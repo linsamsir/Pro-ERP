@@ -91,6 +91,7 @@ export interface Customer {
   
   created_at: string;
   updated_at: string;
+  deleted_at?: string; // Soft delete
   
   // Legacy fields to be maintained but maybe unused
   invoiceNeeded?: boolean; 
@@ -132,6 +133,7 @@ export interface Job {
   status: JobStatus;
   createdAt: string;
   updatedAt: string;
+  deletedAt?: string; // Soft delete
   
   // Section A: Snapshot
   contactPerson: string;
@@ -209,6 +211,7 @@ export interface Expense {
   paymentMethod?: string;
   note?: string;
   createdAt: string;
+  deletedAt?: string; // Soft delete
   
   // Chat Input Metadata
   source?: 'manual_form' | 'chat_input';
@@ -238,6 +241,7 @@ export interface L2Asset {
   cost: number;
   lifespanMonths: number;
   status: 'active' | 'retired' | 'maintenance';
+  deletedAt?: string;
 }
 
 export interface L2StockLog {
@@ -248,10 +252,45 @@ export interface L2StockLog {
   quantity: number; // 桶數/包數
   totalCost: number;
   yieldPerUnit: number; // 一桶可分裝幾罐
+  deletedAt?: string;
 }
 
 export interface L2LaborConfig {
   bossSalary: number;
   partnerSalary: number;
   insuranceCost: number;
+}
+
+// --- Level 0: Auth & Audit ---
+
+export type UserRole = 'OWNER' | 'STAFF';
+
+export interface User {
+  id: string;
+  username: string;
+  name: string;
+  role: UserRole;
+  passwordHash: string; // Simulated
+}
+
+export interface AuditLog {
+  id: string;
+  createdAt: string; // ISO String
+  actor: {
+    userId: string;
+    name: string;
+    role: UserRole;
+  };
+  module: 'AUTH' | 'CUSTOMER' | 'JOB' | 'EXPENSE' | 'SETTINGS' | 'SYSTEM';
+  action: 'LOGIN' | 'LOGOUT' | 'CREATE' | 'UPDATE' | 'DELETE' | 'IMPORT' | 'EXPORT' | 'RESTORE';
+  target: {
+    entityType: string;
+    entityId: string;
+    entityName?: string;
+  };
+  summary: string;
+  diff?: {
+    before?: any;
+    after?: any;
+  };
 }

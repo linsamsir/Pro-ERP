@@ -2,7 +2,8 @@
 import React from 'react';
 import { Customer, AvatarType, Job, JobStatus, ServiceItem } from '../types';
 import { db } from '../services/db';
-import { Plus, Search, MapPin, Phone, User, Edit3, Trash2, ChevronRight, Tag, Clock, Users, Building2, Share2, MessageCircle, Facebook, Instagram, Globe, Calendar, DollarSign, History } from 'lucide-react';
+import { auth } from '../services/auth';
+import { Plus, Search, MapPin, Phone, User, Edit3, Trash2, ChevronRight, Tag, Clock, Users, Building2, Share2, MessageCircle, Facebook, Instagram, Globe, Calendar, DollarSign, History, Lock } from 'lucide-react';
 
 interface CustomerListProps {
   onAdd: () => void;
@@ -15,6 +16,8 @@ const CustomerList: React.FC<CustomerListProps> = ({ onAdd, onEdit }) => {
   const [searchTerm, setSearchTerm] = React.useState('');
   const [viewingCustomer, setViewingCustomer] = React.useState<Customer | null>(null);
   const [viewingJobId, setViewingJobId] = React.useState<string | null>(null);
+  
+  const canWrite = auth.canWrite();
 
   React.useEffect(() => {
     setCustomers(db.customers.getAll());
@@ -29,7 +32,8 @@ const CustomerList: React.FC<CustomerListProps> = ({ onAdd, onEdit }) => {
   );
 
   const handleDelete = (id: string) => {
-    if (!confirm("確定要刪除這位客戶嗎？")) return;
+    if (!canWrite) return;
+    if (!confirm("確定要刪除這位客戶嗎？此操作可由變更紀錄追溯。")) return;
     db.customers.delete(id);
     setCustomers(db.customers.getAll());
     setViewingCustomer(null);
@@ -280,14 +284,16 @@ const CustomerList: React.FC<CustomerListProps> = ({ onAdd, onEdit }) => {
             </div>
 
             {/* Actions */}
-            <div className="p-6 bg-slate-50 border-t border-slate-100 flex gap-4">
-               <button onClick={() => onEdit(viewingCustomer)} className="ac-btn-green flex-1 py-3 flex items-center justify-center gap-2 text-lg">
-                  <Edit3 size={20} /> 修改資料
-               </button>
-               <button onClick={() => handleDelete(viewingCustomer.customer_id)} className="bg-white text-red-400 border-2 border-red-100 px-6 py-3 rounded-2xl font-bold hover:bg-red-50 transition-all">
-                  <Trash2 size={24} />
-               </button>
-            </div>
+            {canWrite && (
+              <div className="p-6 bg-slate-50 border-t border-slate-100 flex gap-4">
+                 <button onClick={() => onEdit(viewingCustomer)} className="ac-btn-green flex-1 py-3 flex items-center justify-center gap-2 text-lg">
+                    <Edit3 size={20} /> 修改資料
+                 </button>
+                 <button onClick={() => handleDelete(viewingCustomer.customer_id)} className="bg-white text-red-400 border-2 border-red-100 px-6 py-3 rounded-2xl font-bold hover:bg-red-50 transition-all">
+                    <Trash2 size={24} />
+                 </button>
+              </div>
+            )}
 
           </div>
         </div>
@@ -298,9 +304,15 @@ const CustomerList: React.FC<CustomerListProps> = ({ onAdd, onEdit }) => {
         <h2 className="text-4xl font-black text-[#5d4a36] flex items-center gap-3">
           <Users className="text-[#78b833]" size={32} /> 村民管理
         </h2>
-        <button onClick={onAdd} className="ac-btn-green px-8 py-3 flex items-center gap-2 shadow-xl scale-105 active:scale-95">
-          <Plus size={24} /> 新增村民
-        </button>
+        {canWrite ? (
+          <button onClick={onAdd} className="ac-btn-green px-8 py-3 flex items-center gap-2 shadow-xl scale-105 active:scale-95">
+            <Plus size={24} /> 新增村民
+          </button>
+        ) : (
+          <button disabled className="bg-slate-200 text-slate-400 px-8 py-3 flex items-center gap-2 rounded-2xl font-bold cursor-not-allowed">
+            <Lock size={20} /> 無新增權限
+          </button>
+        )}
       </div>
 
       <div className="relative">
@@ -314,38 +326,46 @@ const CustomerList: React.FC<CustomerListProps> = ({ onAdd, onEdit }) => {
         />
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {filtered.map(c => (
-          <div key={c.customer_id} onClick={() => setViewingCustomer(c)} className="ac-bubble p-6 hover:scale-[1.02] transition-all cursor-pointer group bg-white">
-            <div className="flex justify-between items-start mb-4">
-              <div className="flex items-center gap-4">
-                {renderAvatar(c, 'sm')}
-                <div>
-                  <h3 className="text-lg font-black text-[#5d4a36] group-hover:text-[#78b833] line-clamp-1">{c.displayName}</h3>
-                  <div className="text-[9px] font-bold text-[#b59a7a] uppercase tracking-tighter">{c.customer_id}</div>
+      {filtered.length === 0 ? (
+        <div className="py-20 text-center text-slate-300">
+           <div className="mb-4 text-4xl">🍃</div>
+           <p className="font-bold">找不到相符的村民</p>
+           {canWrite && <p className="text-xs mt-2">試試新增一位？</p>}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {filtered.map(c => (
+            <div key={c.customer_id} onClick={() => setViewingCustomer(c)} className="ac-bubble p-6 hover:scale-[1.02] transition-all cursor-pointer group bg-white">
+              <div className="flex justify-between items-start mb-4">
+                <div className="flex items-center gap-4">
+                  {renderAvatar(c, 'sm')}
+                  <div>
+                    <h3 className="text-lg font-black text-[#5d4a36] group-hover:text-[#78b833] line-clamp-1">{c.displayName}</h3>
+                    <div className="text-[9px] font-bold text-[#b59a7a] uppercase tracking-tighter">{c.customer_id}</div>
+                  </div>
                 </div>
               </div>
-            </div>
-            <div className="space-y-1 mb-4">
-              <div className="flex items-center gap-2 text-xs font-bold text-[#b59a7a]">
-                <Phone size={12} /> {getPrimaryPhone(c)}
+              <div className="space-y-1 mb-4">
+                <div className="flex items-center gap-2 text-xs font-bold text-[#b59a7a]">
+                  <Phone size={12} /> {getPrimaryPhone(c)}
+                </div>
+                <div className="flex items-start gap-2 text-xs font-bold text-[#b59a7a]">
+                  <MapPin size={12} className="mt-1 shrink-0" />
+                  <span className="line-clamp-1">{getPrimaryAddress(c)}</span>
+                </div>
               </div>
-              <div className="flex items-start gap-2 text-xs font-bold text-[#b59a7a]">
-                <MapPin size={12} className="mt-1 shrink-0" />
-                <span className="line-clamp-1">{getPrimaryAddress(c)}</span>
+              <div className="flex justify-between items-end">
+                 <div className="flex flex-wrap gap-1 max-w-[80%]">
+                   {getAggregatedTags(c.customer_id).slice(0, 2).map(tag => (
+                     <span key={tag} className="text-[8px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded border border-blue-100 font-black">#{tag}</span>
+                   ))}
+                 </div>
+                 <ChevronRight className="text-[#eeeada] group-hover:text-[#78b833]" />
               </div>
             </div>
-            <div className="flex justify-between items-end">
-               <div className="flex flex-wrap gap-1 max-w-[80%]">
-                 {getAggregatedTags(c.customer_id).slice(0, 2).map(tag => (
-                   <span key={tag} className="text-[8px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded border border-blue-100 font-black">#{tag}</span>
-                 ))}
-               </div>
-               <ChevronRight className="text-[#eeeada] group-hover:text-[#78b833]" />
-            </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 };

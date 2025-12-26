@@ -1,6 +1,7 @@
 
 import React from 'react';
-import { Home, Users, ClipboardList, Database, Menu, X, Tent, Crown, PieChart } from 'lucide-react';
+import { Home, Users, ClipboardList, Menu, Tent, Crown, PieChart, Activity, LogOut, User as UserIcon } from 'lucide-react';
+import { auth } from '../services/auth';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -10,14 +11,16 @@ interface LayoutProps {
 
 const Layout: React.FC<LayoutProps> = ({ children, activeView, onNavigate }) => {
   const [menuOpen, setMenuOpen] = React.useState(false);
+  const user = auth.getCurrentUser();
 
   const navItems = [
     { id: 'dashboard', label: '村莊地圖', icon: Home, color: 'text-orange-500' },
     { id: 'boss_dashboard', label: '老闆戰情', icon: Crown, color: 'text-yellow-500' },
-    { id: 'analysis', label: '進階分析', icon: PieChart, color: 'text-indigo-500' }, // New L2 Entry Point
+    { id: 'analysis', label: '進階分析', icon: PieChart, color: 'text-indigo-500' },
     { id: 'customers', label: '村民名冊', icon: Users, color: 'text-blue-500' },
     { id: 'jobs', label: '村莊任務', icon: ClipboardList, color: 'text-green-600' },
     { id: 'import', label: '移居中心', icon: Tent, color: 'text-purple-500' },
+    { id: 'changelog', label: '變更紀錄', icon: Activity, color: 'text-slate-500' }, // Level 0 Feature
   ];
 
   const isActive = (id: string) => {
@@ -25,6 +28,12 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onNavigate }) => 
     if (id === 'customers' && activeView.startsWith('customer')) return true;
     if (id === 'jobs' && activeView.startsWith('job')) return true;
     return false;
+  };
+
+  const handleLogout = () => {
+    if (confirm('確定要登出村莊嗎？')) {
+      auth.logout();
+    }
   };
 
   return (
@@ -41,15 +50,18 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onNavigate }) => 
         ${menuOpen ? 'translate-x-0' : '-translate-x-full'}
       `}>
         <div className="p-8 h-full flex flex-col">
-          <div className="mb-10 text-center">
+          <div className="mb-8 text-center">
             <div className="w-20 h-20 bg-[#78b833] rounded-full mx-auto mb-4 border-4 border-white shadow-lg flex items-center justify-center text-white">
               <Tent size={40} />
             </div>
             <h1 className="text-[#5d4a36] text-2xl font-black">清潔小村</h1>
-            <p className="text-[#b59a7a] text-xs font-bold mt-1 uppercase tracking-widest">Village Manager</p>
+            <div className="mt-2 inline-flex items-center gap-2 bg-white px-3 py-1 rounded-full border border-[#e6e0c6]">
+               <UserIcon size={12} className="text-[#b59a7a]"/>
+               <span className="text-xs font-bold text-[#5d4a36]">{user?.name} ({user?.role === 'OWNER' ? '村長' : '幫手'})</span>
+            </div>
           </div>
           
-          <nav className="space-y-4 flex-1">
+          <nav className="space-y-3 flex-1 overflow-y-auto pr-2">
             {navItems.map((item) => (
               <button
                 key={item.id}
@@ -69,8 +81,13 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onNavigate }) => 
             ))}
           </nav>
 
-          <div className="mt-auto pt-6 border-t-2 border-[#e6e0c6] text-center">
-            <p className="text-[10px] text-[#b59a7a] font-bold">今天是個打掃的好日子！</p>
+          <div className="mt-auto pt-6 border-t-2 border-[#e6e0c6]">
+            <button 
+              onClick={handleLogout}
+              className="w-full flex items-center justify-center gap-2 text-[#b59a7a] hover:text-red-400 font-bold py-2 transition-colors"
+            >
+              <LogOut size={18}/> 登出系統
+            </button>
           </div>
         </div>
       </aside>

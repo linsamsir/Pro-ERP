@@ -10,18 +10,36 @@ import JobList from './components/JobList';
 import JobDetail from './components/JobDetail';
 import BossDashboard from './components/BossDashboard';
 import AnalysisWorkspace from './components/AnalysisWorkspace';
+import Login from './components/Login';
+import Changelog from './components/Changelog';
 import { Customer, Job } from './types';
+import { auth } from './services/auth';
 
-type View = 'dashboard' | 'boss_dashboard' | 'analysis' | 'customers' | 'customer_add' | 'customer_edit' | 'jobs' | 'job_add' | 'job_edit' | 'job_view' | 'import';
+type View = 'dashboard' | 'boss_dashboard' | 'analysis' | 'customers' | 'customer_add' | 'customer_edit' | 'jobs' | 'job_add' | 'job_edit' | 'job_view' | 'import' | 'changelog';
 
 const App: React.FC = () => {
-  const [activeView, setActiveView] = React.useState<View>('dashboard');
+  const [isAuthenticated, setIsAuthenticated] = React.useState(auth.isAuthenticated());
+  const [activeView, setActiveView] = React.useState<View>('boss_dashboard'); // Default to Boss Dashboard after login
   const [selectedCustomer, setSelectedCustomer] = React.useState<Customer | undefined>();
   const [selectedJob, setSelectedJob] = React.useState<Job | undefined>();
   
   // State for the "Quick Add Customer" modal flow
   const [isQuickAddModalOpen, setIsQuickAddModalOpen] = React.useState(false);
   const [quickAddPhone, setQuickAddPhone] = React.useState('');
+
+  React.useEffect(() => {
+    // Check auth on mount
+    setIsAuthenticated(auth.isAuthenticated());
+  }, []);
+
+  const handleLoginSuccess = () => {
+    setIsAuthenticated(true);
+    setActiveView('boss_dashboard');
+  };
+
+  if (!isAuthenticated) {
+    return <Login onLoginSuccess={handleLoginSuccess} />;
+  }
 
   const renderContent = () => {
     switch (activeView) {
@@ -42,6 +60,8 @@ const App: React.FC = () => {
         return <BossDashboard />;
       case 'analysis':
         return <AnalysisWorkspace />;
+      case 'changelog':
+        return <Changelog />;
       case 'customers':
         return (
           <CustomerList 
@@ -125,10 +145,7 @@ const App: React.FC = () => {
       case 'import':
         return <ImportCenter />;
       default:
-        return <Dashboard 
-            onStartReport={(c) => { setSelectedCustomer(c); setActiveView('job_add'); }} 
-            onAddCustomer={(p) => { setQuickAddPhone(p); setIsQuickAddModalOpen(true); }}
-          />;
+        return <BossDashboard />;
     }
   };
 
