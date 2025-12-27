@@ -31,6 +31,11 @@ export const auth = {
     const email = USER_MAPPING[username] || username; // Allow direct email or username
     
     try {
+      // Check if auth instance is properly configured with an API key
+      if (!firebaseAuth.app || !firebaseAuth.app.options || !firebaseAuth.app.options.apiKey) {
+        throw { code: 'auth/api-key-missing' };
+      }
+
       const result = await signInWithEmailAndPassword(firebaseAuth, email, password);
       // Determine Role
       const user = await auth.syncUserRole(result.user);
@@ -38,11 +43,18 @@ export const auth = {
     } catch (error: any) {
       console.error("Login Error:", error);
       let msg = "登入失敗";
-      if (error.code === 'auth/invalid-credential' || error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
+      
+      // Handle specific Firebase Auth errors
+      if (error.code === 'auth/invalid-api-key' || error.code === 'auth/api-key-not-valid' || error.code === 'auth/api-key-missing') {
+        msg = "系統配置錯誤：Firebase API Key 無效或缺失。請確認環境變數已正確設定。";
+      } else if (error.code === 'auth/invalid-credential' || error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
         msg = "帳號或密碼錯誤";
       } else if (error.code === 'auth/too-many-requests') {
         msg = "登入嘗試過多，請稍後再試";
+      } else if (error.code === 'auth/network-request-failed') {
+        msg = "網路連線失敗，請檢查網路狀態";
       }
+      
       return { success: false, message: msg };
     }
   },
@@ -61,6 +73,12 @@ export const auth = {
   init: (callback: (user: User | null) => void) => {
     if (authInitialized) return callback(currentUser);
     
+    // Safety check for uninitialized auth or missing config
+    if (!firebaseAuth.app || !firebaseAuth.app.options || !firebaseAuth.app.options.apiKey) {
+      authInitialized = true;
+      return callback(null);
+    }
+
     onAuthStateChanged(firebaseAuth, async (fbUser) => {
       if (fbUser) {
         currentUser = await auth.syncUserRole(fbUser);

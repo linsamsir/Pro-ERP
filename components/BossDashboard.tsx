@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { db } from '../services/db';
 import { Job, Customer, JobStatus, Expense, AppSettings, L2LaborConfig } from '../types';
@@ -19,6 +18,19 @@ interface DateRange {
   end: Date;
   type: RangeType;
 }
+
+const DEFAULT_SETTINGS: AppSettings = {
+  monthlyTarget: 150000,
+  monthlySalary: 60000,
+  laborBreakdown: { bossSalary: 30000, partnerSalary: 30000 },
+  consumables: { citricCostPerCan: 50, chemicalDrumCost: 3000, chemicalDrumToBottles: 20 }
+};
+
+const DEFAULT_LABOR: L2LaborConfig = {
+  bossSalary: 30000,
+  partnerSalary: 30000,
+  insuranceCost: 12000
+};
 
 // --- Extracted Components ---
 
@@ -156,7 +168,7 @@ const AddExpenseModal: React.FC<AddExpenseModalProps> = ({ onClose, onSave }) =>
     note: ''
   });
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!form.amount) return alert('請輸入金額');
     const newExp: Expense = {
       id: db.expenses.generateId(),
@@ -167,7 +179,7 @@ const AddExpenseModal: React.FC<AddExpenseModalProps> = ({ onClose, onSave }) =>
       createdAt: new Date().toISOString(),
       source: 'manual_form'
     };
-    db.expenses.save(newExp);
+    await db.expenses.save(newExp);
     onSave();
     onClose();
   };
@@ -213,8 +225,8 @@ const AddExpenseModal: React.FC<AddExpenseModalProps> = ({ onClose, onSave }) =>
 
 const BossDashboard: React.FC = () => {
   // --- Global State ---
-  const [settings, setSettings] = React.useState<AppSettings>(db.settings.get());
-  const [l2Labor, setL2Labor] = React.useState<L2LaborConfig>(db.l2.labor.get());
+  const [settings, setSettings] = React.useState<AppSettings>(DEFAULT_SETTINGS);
+  const [l2Labor, setL2Labor] = React.useState<L2LaborConfig>(DEFAULT_LABOR);
   const [jobs, setJobs] = React.useState<Job[]>([]);
   const [customers, setCustomers] = React.useState<Customer[]>([]);
   const [expenses, setExpenses] = React.useState<Expense[]>([]);
@@ -238,12 +250,19 @@ const BossDashboard: React.FC = () => {
   const [showChatExpense, setShowChatExpense] = React.useState(false);
   
   // --- Init & Refresh ---
-  const refreshData = () => {
-    setJobs(db.jobs.getAll());
-    setCustomers(db.customers.getAll());
-    setExpenses(db.expenses.getAll());
-    setSettings(db.settings.get());
-    setL2Labor(db.l2.labor.get());
+  const refreshData = async () => {
+    const [jData, cData, eData, sData, lData] = await Promise.all([
+      db.jobs.getAll(),
+      db.customers.getAll(),
+      db.expenses.getAll(),
+      db.settings.get(),
+      db.l2.labor.get()
+    ]);
+    setJobs(jData);
+    setCustomers(cData);
+    setExpenses(eData);
+    setSettings(sData);
+    setL2Labor(lData);
   };
 
   React.useEffect(() => {
@@ -367,16 +386,16 @@ const BossDashboard: React.FC = () => {
     document.body.removeChild(link);
   };
 
-  const handleSettingsSave = (newSettings: AppSettings, newLabor: L2LaborConfig) => {
-    db.settings.save(newSettings);
-    db.l2.labor.save(newLabor);
+  const handleSettingsSave = async (newSettings: AppSettings, newLabor: L2LaborConfig) => {
+    await db.settings.save(newSettings);
+    await db.l2.labor.save(newLabor);
     setShowSettings(false);
     refreshData();
   };
 
-  const handleDeleteExpense = () => {
+  const handleDeleteExpense = async () => {
     if (deleteExpenseId) {
-      db.expenses.delete(deleteExpenseId);
+      await db.expenses.delete(deleteExpenseId);
       refreshData();
       setDeleteExpenseId(null);
     }

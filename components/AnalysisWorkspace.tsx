@@ -11,6 +11,12 @@ import {
 
 type Tab = 'dashboard' | 'assets' | 'stock';
 
+const DEFAULT_LABOR: L2LaborConfig = {
+  bossSalary: 30000,
+  partnerSalary: 30000,
+  insuranceCost: 12000
+};
+
 const AnalysisWorkspace: React.FC = () => {
   const [activeTab, setActiveTab] = React.useState<Tab>('dashboard');
   const [isDemo, setIsDemo] = React.useState(false);
@@ -19,7 +25,7 @@ const AnalysisWorkspace: React.FC = () => {
   // Data State
   const [l2Assets, setL2Assets] = React.useState<L2Asset[]>([]);
   const [l2Stock, setL2Stock] = React.useState<L2StockLog[]>([]);
-  const [l2Labor, setL2Labor] = React.useState<L2LaborConfig>(db.l2.labor.get() as unknown as L2LaborConfig); // Correctly init or wait
+  const [l2Labor, setL2Labor] = React.useState<L2LaborConfig>(DEFAULT_LABOR);
   const [jobs, setJobs] = React.useState<Job[]>([]);
   const [expenses, setExpenses] = React.useState<Expense[]>([]);
   const [analyzedJobs, setAnalyzedJobs] = React.useState<L2JobAnalysis[]>([]);
