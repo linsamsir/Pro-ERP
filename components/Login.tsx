@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { auth } from '../services/auth';
 import { Tent, ArrowRight, Lock, User } from 'lucide-react';
@@ -19,8 +18,8 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
     setError('');
 
     // Simulate network delay for better UX feel
-    setTimeout(() => {
-      const result = auth.login(username, password);
+    setTimeout(async () => {
+      const result = await auth.login(username, password);
       if (result.success) {
         onLoginSuccess();
       } else {

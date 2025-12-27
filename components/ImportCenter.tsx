@@ -39,6 +39,8 @@ const ImportCenter: React.FC = () => {
     let skippedCount = 0;
     let newCustomerCount = 0;
 
+    const allCustomers = await db.customers.getAll();
+
     for (const rowText of dataRows) {
       const cols = rowText.split('\t').map(c => c.trim());
       const rowData: any = {};
@@ -55,7 +57,7 @@ const ImportCenter: React.FC = () => {
         }
 
         // Logic difference: For 'returning', we emphasize finding existing, but fallback to create is safe
-        let customer = db.customers.getAll().find(c => 
+        let customer = allCustomers.find(c => 
           (rawId && c.customer_id === rawId) || 
           (phone && c.phones.some(p => p.number === phone))
         );

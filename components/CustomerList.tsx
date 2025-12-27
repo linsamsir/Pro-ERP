@@ -4,7 +4,7 @@ import { Customer, AvatarType, Job, JobStatus, ServiceItem } from '../types';
 import { db } from '../services/db';
 import { auth } from '../services/auth';
 import ConfirmDialog from './ConfirmDialog';
-import { Plus, Search, MapPin, Phone, User, Edit3, Trash2, ChevronRight, Tag, Clock, Users, Building2, Share2, MessageCircle, Facebook, Instagram, Globe, Calendar, DollarSign, History, Lock } from 'lucide-react';
+import { Plus, Search, MapPin, Phone, User, Edit3, Trash2, ChevronRight, Tag, Clock, Users, Building2, Share2, MessageCircle, Facebook, Instagram, Globe, Calendar, DollarSign, History, Lock, Loader2 } from 'lucide-react';
 
 interface CustomerListProps {
   onAdd: () => void;
@@ -14,6 +14,7 @@ interface CustomerListProps {
 const CustomerList: React.FC<CustomerListProps> = ({ onAdd, onEdit }) => {
   const [customers, setCustomers] = React.useState<Customer[]>([]);
   const [jobs, setJobs] = React.useState<Job[]>([]);
+  const [loading, setLoading] = React.useState(true);
   const [searchTerm, setSearchTerm] = React.useState('');
   const [viewingCustomer, setViewingCustomer] = React.useState<Customer | null>(null);
   const [viewingJobId, setViewingJobId] = React.useState<string | null>(null);
@@ -21,9 +22,19 @@ const CustomerList: React.FC<CustomerListProps> = ({ onAdd, onEdit }) => {
   
   const canWrite = auth.canWrite();
 
+  const fetchData = async () => {
+    setLoading(true);
+    const [cData, jData] = await Promise.all([
+      db.customers.getAll(),
+      db.jobs.getAll()
+    ]);
+    setCustomers(cData);
+    setJobs(jData);
+    setLoading(false);
+  };
+
   React.useEffect(() => {
-    setCustomers(db.customers.getAll());
-    setJobs(db.jobs.getAll());
+    fetchData();
   }, []);
 
   const filtered = customers.filter(c => 
@@ -33,16 +44,16 @@ const CustomerList: React.FC<CustomerListProps> = ({ onAdd, onEdit }) => {
     c.addresses.some(a => a.text.includes(searchTerm))
   );
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (deleteId) {
-      db.customers.delete(deleteId);
-      setCustomers(db.customers.getAll());
+      await db.customers.delete(deleteId);
+      await fetchData();
       setViewingCustomer(null);
       setDeleteId(null);
     }
   };
 
-  // Helpers with Masking
+  // ... (Keep existing helper functions getPrimaryPhone, getPrimaryAddress, getReferrerName, getAggregatedTags, getCustomerHistory, getAvatarInfo, renderAvatar, renderSocialIcon same as before) ...
   const getPrimaryPhone = (c: Customer) => {
     const raw = c.phones.find(p => p.isPrimary)?.number || c.phones[0]?.number || '無電話';
     return auth.maskSensitiveData(raw, 'phone');
@@ -54,24 +65,17 @@ const CustomerList: React.FC<CustomerListProps> = ({ onAdd, onEdit }) => {
   
   const getReferrerName = (refId: string) => customers.find(c => c.customer_id === refId)?.displayName || '未知村民';
 
-  // Tag Aggregation Logic
   const getAggregatedTags = (customerId: string) => {
     const customerJobs = jobs.filter(j => j.customerId === customerId);
     const tagCounts: Record<string, number> = {};
-    
     customerJobs.forEach(j => {
       [...j.tankConditionTags, ...j.subjective_tags].forEach(tag => {
         tagCounts[tag] = (tagCounts[tag] || 0) + 1;
       });
     });
-
-    return Object.entries(tagCounts)
-      .sort(([, a], [, b]) => b - a)
-      .slice(0, 8)
-      .map(([tag]) => tag);
+    return Object.entries(tagCounts).sort(([, a], [, b]) => b - a).slice(0, 8).map(([tag]) => tag);
   };
 
-  // Job History Logic
   const getCustomerHistory = (customerId: string) => {
     return jobs
       .filter(j => j.customerId === customerId && j.status === JobStatus.COMPLETED)
@@ -98,7 +102,6 @@ const CustomerList: React.FC<CustomerListProps> = ({ onAdd, onEdit }) => {
   const renderAvatar = (c: Customer, size: 'sm' | 'lg' = 'sm') => {
     let emoji = '👨';
     let color = 'bg-slate-200';
-    
     if (c.avatar && (c.avatar as string).includes('|')) {
        const parts = (c.avatar as string).split('|');
        emoji = parts[0];
@@ -108,13 +111,10 @@ const CustomerList: React.FC<CustomerListProps> = ({ onAdd, onEdit }) => {
        emoji = info.icon;
        color = info.color;
     }
-
     const containerClass = size === 'sm' 
       ? `w-14 h-14 rounded-full border-2 border-[#eeeada] flex items-center justify-center text-2xl shadow-sm relative ${color}`
       : `w-24 h-24 rounded-[2rem] border-4 border-white flex items-center justify-center text-5xl shadow-xl relative ${color}`;
-    
     const statusEmoji = c.interactionStatus === 'angel' ? '😇' : c.interactionStatus === 'devil' ? '😈' : null;
-
     return (
       <div className={containerClass}>
         {emoji}
@@ -137,7 +137,6 @@ const CustomerList: React.FC<CustomerListProps> = ({ onAdd, onEdit }) => {
     }
   };
 
-  // Job History Popup
   const JobHistoryPopup = ({ jobId }: { jobId: string }) => {
     const job = jobs.find(j => j.jobId === jobId);
     if (!job) return null;
@@ -185,15 +184,13 @@ const CustomerList: React.FC<CustomerListProps> = ({ onAdd, onEdit }) => {
         onCancel={() => setDeleteId(null)}
       />
 
+      {/* Viewing Customer Modal (Same as before) */}
       {viewingCustomer && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
           <div className="ac-bubble bg-white w-full max-w-2xl max-h-[90vh] overflow-y-auto p-0 animate-in zoom-in-95 duration-200 relative">
-            
-            {/* Header / Passport Top */}
             <div className="bg-[#78b833] p-6 text-white relative overflow-hidden">
                <div className="absolute -right-10 -top-10 text-white/10 rotate-12"><User size={200} /></div>
                <button onClick={() => setViewingCustomer(null)} className="absolute top-4 right-4 p-2 bg-white/20 rounded-full hover:bg-white/30 text-white z-10">✕</button>
-               
                <div className="flex items-center gap-6 relative z-0">
                  {renderAvatar(viewingCustomer, 'lg')}
                  <div>
@@ -206,9 +203,7 @@ const CustomerList: React.FC<CustomerListProps> = ({ onAdd, onEdit }) => {
                  </div>
                </div>
             </div>
-
             <div className="p-8">
-               {/* Contact & Social */}
                <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8 border-b-2 border-dashed border-slate-100 pb-8">
                  <div className="space-y-4">
                     <div className="bg-orange-50 p-4 rounded-2xl border border-orange-100">
@@ -228,7 +223,6 @@ const CustomerList: React.FC<CustomerListProps> = ({ onAdd, onEdit }) => {
                        <p className="text-xs text-slate-400 mt-1">{viewingCustomer.building_type} {viewingCustomer.has_elevator ? '(有電梯)' : ''}</p>
                     </div>
                  </div>
-
                  <div className="space-y-6">
                     <div>
                        <h4 className="text-xs font-black text-blue-400 uppercase mb-2 flex items-center gap-1"><Share2 size={12}/> 來源與社群</h4>
@@ -256,11 +250,8 @@ const CustomerList: React.FC<CustomerListProps> = ({ onAdd, onEdit }) => {
                     </div>
                  </div>
                </div>
-
-               {/* Tags & History */}
                <div className="grid grid-cols-1 md:grid-cols-2 gap-8 relative">
                   {viewingJobId && <JobHistoryPopup jobId={viewingJobId} />}
-                  
                   <div>
                      <h4 className="text-sm font-black text-[#5d4a36] mb-4 flex items-center gap-2"><Tag size={16} className="text-[#78b833]"/> 智慧標籤統計</h4>
                      <div className="flex flex-wrap gap-2">
@@ -271,7 +262,6 @@ const CustomerList: React.FC<CustomerListProps> = ({ onAdd, onEdit }) => {
                         )) : <span className="text-xs text-slate-400 italic">累積更多工單後自動分析</span>}
                      </div>
                   </div>
-
                   <div>
                      <h4 className="text-sm font-black text-[#5d4a36] mb-4 flex items-center gap-2"><History size={16} className="text-orange-400"/> 最近造訪紀錄</h4>
                      <div className="space-y-2">
@@ -297,8 +287,6 @@ const CustomerList: React.FC<CustomerListProps> = ({ onAdd, onEdit }) => {
                   </div>
                </div>
             </div>
-
-            {/* Actions */}
             {canWrite && (
               <div className="p-6 bg-slate-50 border-t border-slate-100 flex gap-4">
                  <button onClick={() => onEdit(viewingCustomer)} className="ac-btn-green flex-1 py-3 flex items-center justify-center gap-2 text-lg">
@@ -309,7 +297,6 @@ const CustomerList: React.FC<CustomerListProps> = ({ onAdd, onEdit }) => {
                  </button>
               </div>
             )}
-
           </div>
         </div>
       )}
@@ -341,7 +328,12 @@ const CustomerList: React.FC<CustomerListProps> = ({ onAdd, onEdit }) => {
         />
       </div>
 
-      {filtered.length === 0 ? (
+      {loading ? (
+        <div className="py-20 text-center text-slate-400 flex flex-col items-center">
+           <Loader2 className="animate-spin mb-2" size={40}/>
+           <p className="font-bold">村民資料載入中...</p>
+        </div>
+      ) : filtered.length === 0 ? (
         <div className="py-20 text-center text-slate-300">
            <div className="mb-4 text-4xl">🍃</div>
            <p className="font-bold">找不到相符的村民</p>

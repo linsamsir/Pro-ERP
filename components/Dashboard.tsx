@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { db } from '../services/db';
 import { Customer } from '../types';
@@ -22,7 +21,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onStartReport, onAddCustomer }) =
   // Normalize: Remove non-digits
   const normalizePhone = (p: string) => p.replace(/[^\d]/g, '');
 
-  const handleSearch = (input: string) => {
+  const handleSearch = async (input: string) => {
     const cleanPhone = normalizePhone(input);
     
     if (cleanPhone.length < 4) {
@@ -31,7 +30,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onStartReport, onAddCustomer }) =
       return;
     }
 
-    const customers = db.customers.getAll();
+    const customers = await db.customers.getAll();
     const match = customers.find(c => 
       c.phones.some(p => normalizePhone(p.number).includes(cleanPhone))
     );

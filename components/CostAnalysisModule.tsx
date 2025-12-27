@@ -1,7 +1,6 @@
-
 import React from 'react';
 import { db } from '../services/db';
-import { L2Asset, L2StockLog } from '../types';
+import { L2Asset, L2StockLog, Job, Expense, AppSettings } from '../types';
 import { CostEngine, MonthlyCostReport } from '../services/costEngine';
 import { X, PieChart, Package, Truck, HardHat, Receipt, Trash2, Plus, Calendar, Download, ChevronLeft, ChevronRight, AlertCircle } from 'lucide-react';
 
@@ -11,6 +10,12 @@ interface CostAnalysisModuleProps {
 
 type SubTab = 'overview' | 'assets' | 'stock' | 'labor';
 
+const defaultSettings: AppSettings = {
+    monthlyTarget: 0,
+    monthlySalary: 0,
+    consumables: { citricCostPerCan: 0, chemicalDrumCost: 0, chemicalDrumToBottles: 1 }
+};
+
 const CostAnalysisModule: React.FC<CostAnalysisModuleProps> = ({ onClose }) => {
   const [activeTab, setActiveTab] = React.useState<SubTab>('overview');
   const [currentDate, setCurrentDate] = React.useState(new Date());
@@ -18,8 +23,10 @@ const CostAnalysisModule: React.FC<CostAnalysisModuleProps> = ({ onClose }) => {
   // Data
   const [assets, setAssets] = React.useState<L2Asset[]>([]);
   const [stockLogs, setStockLogs] = React.useState<L2StockLog[]>([]);
+  const [jobs, setJobs] = React.useState<Job[]>([]);
+  const [expenses, setExpenses] = React.useState<Expense[]>([]);
   const [report, setReport] = React.useState<MonthlyCostReport | null>(null);
-  const [settings, setSettings] = React.useState(db.settings.get());
+  const [settings, setSettings] = React.useState<AppSettings>(defaultSettings);
 
   // Forms
   const [showAssetForm, setShowAssetForm] = React.useState(false);
@@ -28,10 +35,19 @@ const CostAnalysisModule: React.FC<CostAnalysisModuleProps> = ({ onClose }) => {
   const [showStockForm, setShowStockForm] = React.useState(false);
   const [newStock, setNewStock] = React.useState<Partial<L2StockLog>>({ itemType: 'citric', purchaseType: 'bulk', quantity: 1, totalCost: 0, yieldPerUnit: 20 });
 
-  const refreshData = () => {
-    setAssets(db.l2.assets.getAll());
-    setStockLogs(db.l2.stock.getAll());
-    setSettings(db.settings.get());
+  const refreshData = async () => {
+    const [a, s, j, e, set] = await Promise.all([
+        db.l2.assets.getAll(),
+        db.l2.stock.getAll(),
+        db.jobs.getAll(),
+        db.expenses.getAll(),
+        db.settings.get()
+    ]);
+    setAssets(a);
+    setStockLogs(s);
+    setJobs(j);
+    setExpenses(e);
+    setSettings(set);
   };
 
   React.useEffect(() => {
@@ -43,14 +59,14 @@ const CostAnalysisModule: React.FC<CostAnalysisModuleProps> = ({ onClose }) => {
     const r = CostEngine.generateMonthlyReport(
       currentDate.getFullYear(),
       currentDate.getMonth() + 1,
-      db.jobs.getAll(),
-      db.expenses.getAll(),
+      jobs,
+      expenses,
       assets,
       stockLogs,
       settings
     );
     setReport(r);
-  }, [currentDate, assets, stockLogs, settings]);
+  }, [currentDate, assets, stockLogs, settings, jobs, expenses]);
 
   const changeMonth = (delta: number) => {
     const newDate = new Date(currentDate);
@@ -59,16 +75,16 @@ const CostAnalysisModule: React.FC<CostAnalysisModuleProps> = ({ onClose }) => {
   };
 
   // --- Handlers ---
-  const handleAddAsset = () => {
+  const handleAddAsset = async () => {
     if (!newAsset.name || !newAsset.cost) return;
-    db.l2.assets.save({ ...newAsset, id: db.l2.assets.generateId() } as L2Asset);
+    await db.l2.assets.save({ ...newAsset, id: db.l2.assets.generateId() } as L2Asset);
     setShowAssetForm(false);
     refreshData();
   };
 
-  const handleAddStock = () => {
+  const handleAddStock = async () => {
     if (!newStock.quantity || !newStock.totalCost) return;
-    db.l2.stock.save({ ...newStock, id: db.l2.stock.generateId(), date: new Date().toLocaleDateString('en-CA') } as L2StockLog);
+    await db.l2.stock.save({ ...newStock, id: db.l2.stock.generateId(), date: new Date().toLocaleDateString('en-CA') } as L2StockLog);
     setShowStockForm(false);
     refreshData();
   };
@@ -241,7 +257,7 @@ const CostAnalysisModule: React.FC<CostAnalysisModuleProps> = ({ onClose }) => {
                                 <td className="p-3 text-sm font-mono text-right">${a.cost.toLocaleString()}</td>
                                 <td className="p-3 text-sm font-mono text-right text-red-400">${Math.round(a.cost / a.lifespanMonths).toLocaleString()}</td>
                                 <td className="p-3 text-right">
-                                   <button onClick={() => { if(confirm('刪除?')) { db.l2.assets.delete(a.id); refreshData(); }}} className="text-slate-300 hover:text-red-500"><Trash2 size={14}/></button>
+                                   <button onClick={async () => { if(confirm('刪除?')) { await db.l2.assets.delete(a.id); refreshData(); }}} className="text-slate-300 hover:text-red-500"><Trash2 size={14}/></button>
                                 </td>
                              </tr>
                            ))}
@@ -303,7 +319,7 @@ const CostAnalysisModule: React.FC<CostAnalysisModuleProps> = ({ onClose }) => {
                                <td className="p-4 font-black text-[#5d4a36]">{l.itemType === 'citric' ? '檸檬酸' : '藥劑'}</td>
                                <td className="p-4 text-right font-mono">${l.totalCost}</td>
                                <td className="p-4 text-right font-mono">{l.quantity * l.yieldPerUnit}</td>
-                               <td className="p-4 text-right"><button onClick={() => { db.l2.stock.delete(l.id); refreshData(); }} className="text-slate-300 hover:text-red-500"><Trash2 size={16}/></button></td>
+                               <td className="p-4 text-right"><button onClick={async () => { await db.l2.stock.delete(l.id); refreshData(); }} className="text-slate-300 hover:text-red-500"><Trash2 size={16}/></button></td>
                             </tr>
                          ))}
                       </tbody>

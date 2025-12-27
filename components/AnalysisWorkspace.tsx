@@ -1,8 +1,7 @@
-
 import React from 'react';
 import { db } from '../services/db';
 import { L2Engine, L2JobAnalysis } from '../services/l2Engine';
-import { Job, L2Asset, L2StockLog, L2LaborConfig, JobStatus } from '../types';
+import { Job, L2Asset, L2StockLog, L2LaborConfig, JobStatus, Expense } from '../types';
 import { auth } from '../services/auth';
 import ConfirmDialog from './ConfirmDialog';
 import { 
@@ -20,8 +19,9 @@ const AnalysisWorkspace: React.FC = () => {
   // Data State
   const [l2Assets, setL2Assets] = React.useState<L2Asset[]>([]);
   const [l2Stock, setL2Stock] = React.useState<L2StockLog[]>([]);
-  const [l2Labor, setL2Labor] = React.useState<L2LaborConfig>(db.l2.labor.get());
+  const [l2Labor, setL2Labor] = React.useState<L2LaborConfig>(db.l2.labor.get() as unknown as L2LaborConfig); // Correctly init or wait
   const [jobs, setJobs] = React.useState<Job[]>([]);
+  const [expenses, setExpenses] = React.useState<Expense[]>([]);
   const [analyzedJobs, setAnalyzedJobs] = React.useState<L2JobAnalysis[]>([]);
   
   // Delete States
@@ -33,11 +33,19 @@ const AnalysisWorkspace: React.FC = () => {
   const [newAsset, setNewAsset] = React.useState<Partial<L2Asset>>({ name: '', cost: 0, purchaseDate: new Date().toLocaleDateString('en-CA'), lifespanMonths: 24 });
   const [newStock, setNewStock] = React.useState<Partial<L2StockLog>>({ itemType: 'citric', purchaseType: 'bulk', quantity: 1, totalCost: 0, yieldPerUnit: 20 });
 
-  const refresh = () => {
-    setL2Assets(db.l2.assets.getAll());
-    setL2Stock(db.l2.stock.getAll());
-    setL2Labor(db.l2.labor.get());
-    setJobs(db.jobs.getAll());
+  const refresh = async () => {
+    const [assets, stock, labor, allJobs, allExpenses] = await Promise.all([
+        db.l2.assets.getAll(),
+        db.l2.stock.getAll(),
+        db.l2.labor.get(),
+        db.jobs.getAll(),
+        db.expenses.getAll()
+    ]);
+    setL2Assets(assets);
+    setL2Stock(stock);
+    setL2Labor(labor);
+    setJobs(allJobs);
+    setExpenses(allExpenses);
   };
 
   React.useEffect(() => {
@@ -52,7 +60,7 @@ const AnalysisWorkspace: React.FC = () => {
     // 1. Prepare Parameters
     const unitCosts = L2Engine.getConsumableUnitCosts(l2Stock);
     const monthlyDepreciation = L2Engine.getMonthlyDepreciation(l2Assets, currentDate);
-    const trafficCostPerMin = L2Engine.getTrafficCostPerMinute(db.expenses.getAll(), jobs, monthPrefix);
+    const trafficCostPerMin = L2Engine.getTrafficCostPerMinute(expenses, jobs, monthPrefix);
     const totalWorkHours = monthlyJobs.reduce((sum, j) => sum + (j.workDurationHours || 0), 0);
 
     // 2. Run Analysis for each job
@@ -61,7 +69,7 @@ const AnalysisWorkspace: React.FC = () => {
     );
 
     setAnalyzedJobs(results.sort((a,b) => new Date(b.job.serviceDate).getTime() - new Date(a.job.serviceDate).getTime()));
-  }, [jobs, l2Assets, l2Stock, l2Labor, currentDate]);
+  }, [jobs, l2Assets, l2Stock, l2Labor, currentDate, expenses]);
 
   const toggleDemo = () => setIsDemo(!isDemo);
 
@@ -77,28 +85,28 @@ const AnalysisWorkspace: React.FC = () => {
   };
 
   // Handlers
-  const handleAddAsset = () => {
+  const handleAddAsset = async () => {
     if(!canWrite) return;
     if(!newAsset.name) return;
-    db.l2.assets.save({ ...newAsset, id: `L2A-${Date.now()}`, status: 'active' } as L2Asset);
+    await db.l2.assets.save({ ...newAsset, id: `L2A-${Date.now()}`, status: 'active' } as L2Asset);
     setNewAsset({ name: '', cost: 0, purchaseDate: new Date().toLocaleDateString('en-CA'), lifespanMonths: 24 });
     refresh();
   };
 
-  const handleAddStock = () => {
+  const handleAddStock = async () => {
     if(!canWrite) return;
     if(!newStock.totalCost) return;
-    db.l2.stock.save({ ...newStock, id: `L2S-${Date.now()}`, date: new Date().toLocaleDateString('en-CA') } as L2StockLog);
+    await db.l2.stock.save({ ...newStock, id: `L2S-${Date.now()}`, date: new Date().toLocaleDateString('en-CA') } as L2StockLog);
     setNewStock({ itemType: 'citric', purchaseType: 'bulk', quantity: 1, totalCost: 0, yieldPerUnit: 20 });
     refresh();
   };
 
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (!deleteTarget) return;
     if (deleteTarget.type === 'asset') {
-      db.l2.assets.delete(deleteTarget.id);
+      await db.l2.assets.delete(deleteTarget.id);
     } else {
-      db.l2.stock.delete(deleteTarget.id);
+      await db.l2.stock.delete(deleteTarget.id);
     }
     refresh();
     setDeleteTarget(null);
@@ -320,7 +328,7 @@ const AnalysisWorkspace: React.FC = () => {
                                <td className="p-5 text-right font-mono font-bold text-lg">${auth.maskSensitiveData(l.totalCost, 'money')}</td>
                                <td className="p-5 text-right font-mono font-bold">{l.quantity * l.yieldPerUnit}</td>
                                <td className="p-5 text-right">
-                                 {canWrite && <button onClick={() => setDeleteTarget({type: 'stock', id: l.id})} className="text-slate-300 hover:text-red-500"><Trash2 size={20}/></button>}
+                                 {canWrite && <button onClick={async () => { await db.l2.stock.delete(l.id); refresh(); }} className="text-slate-300 hover:text-red-500"><Trash2 size={20}/></button>}
                                </td>
                             </tr>
                          ))}

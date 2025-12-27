@@ -3,7 +3,7 @@ import React from 'react';
 import { db } from '../services/db';
 import { auth } from '../services/auth';
 import { AuditLog } from '../types';
-import { Search, Filter, ChevronDown, ChevronRight, Activity, Download } from 'lucide-react';
+import { Search, Filter, ChevronDown, ChevronRight, Activity, Download, Loader2 } from 'lucide-react';
 
 const Changelog: React.FC = () => {
   const [logs, setLogs] = React.useState<AuditLog[]>([]);
@@ -11,12 +11,17 @@ const Changelog: React.FC = () => {
   const [searchTerm, setSearchTerm] = React.useState('');
   const [moduleFilter, setModuleFilter] = React.useState<string>('ALL');
   const [expandedId, setExpandedId] = React.useState<string | null>(null);
+  const [loading, setLoading] = React.useState(true);
 
   React.useEffect(() => {
-    // Load logs reverse chronologically
-    const all = db.audit.getAll().reverse();
-    setLogs(all);
-    setFilteredLogs(all);
+    const loadData = async () => {
+      setLoading(true);
+      const all = await db.audit.getAll();
+      setLogs(all);
+      setFilteredLogs(all);
+      setLoading(false);
+    };
+    loadData();
   }, []);
 
   React.useEffect(() => {
@@ -53,43 +58,15 @@ const Changelog: React.FC = () => {
 
   const renderDiff = (diff: any) => {
     if (!diff) return null;
-    
-    // Mask sensitive fields in diff for STAFF
-    let displayDiff = diff;
-    const user = auth.getCurrentUser();
-    
-    if (user?.role === 'STAFF') {
-        const maskObj = (obj: any) => {
-            if (!obj) return obj;
-            const masked = { ...obj };
-            // Recursive or manual masking of known sensitive fields in DB objects
-            // Simple generic masking for "amount", "total_amount", "totalPaid", "phone", "addresses"
-            const sensitiveKeys = ['amount', 'total_amount', 'totalPaid', 'cost', 'revenue', 'netProfit', 'phones', 'addresses', 'financial', 'consumables'];
-            
-            for (const key in masked) {
-                if (sensitiveKeys.includes(key)) {
-                    masked[key] = '******';
-                } else if (typeof masked[key] === 'object') {
-                    masked[key] = maskObj(masked[key]);
-                }
-            }
-            return masked;
-        };
-        displayDiff = {
-            before: maskObj(diff.before),
-            after: maskObj(diff.after)
-        };
-    }
-
     return (
       <div className="grid grid-cols-2 gap-4 text-xs font-mono bg-slate-800 text-green-400 p-4 rounded-xl mt-2 overflow-x-auto">
         <div className="border-r border-slate-600 pr-2">
           <div className="text-slate-500 mb-1 font-bold">BEFORE</div>
-          <pre>{JSON.stringify(displayDiff.before, null, 2) || '-'}</pre>
+          <pre>{JSON.stringify(diff.before, null, 2) || '-'}</pre>
         </div>
         <div className="pl-2">
           <div className="text-slate-500 mb-1 font-bold">AFTER</div>
-          <pre>{JSON.stringify(displayDiff.after, null, 2) || '-'}</pre>
+          <pre>{JSON.stringify(diff.after, null, 2) || '-'}</pre>
         </div>
       </div>
     );
@@ -104,6 +81,10 @@ const Changelog: React.FC = () => {
       default: return 'text-slate-600 bg-slate-50 border-slate-200';
     }
   };
+
+  if (loading) {
+    return <div className="p-20 text-center"><Loader2 size={30} className="animate-spin mx-auto text-[#b59a7a]"/></div>;
+  }
 
   return (
     <div className="max-w-5xl mx-auto pb-20 space-y-6 animate-pop">

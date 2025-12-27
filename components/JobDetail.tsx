@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Job, Customer, JobStatus, ServiceItem, AvatarType } from '../types';
 import { db } from '../services/db';
@@ -16,9 +15,17 @@ interface JobDetailProps {
 }
 
 const JobDetail: React.FC<JobDetailProps> = ({ job, onBack, onEdit }) => {
-  const customer = db.customers.get(job.customerId);
+  const [customer, setCustomer] = React.useState<Customer | undefined>();
   const canWrite = auth.canWrite();
   const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false);
+
+  React.useEffect(() => {
+    const fetchCustomer = async () => {
+      const c = await db.customers.get(job.customerId);
+      setCustomer(c);
+    };
+    fetchCustomer();
+  }, [job.customerId]);
 
   const getAvatarInfo = (type: AvatarType) => {
     switch (type) {

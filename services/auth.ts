@@ -1,133 +1,153 @@
 
 import { User, UserRole } from '../types';
-import { db } from './db';
+import { auth as firebaseAuth, db as firebaseDb } from './firebase';
+import { signInWithEmailAndPassword, signOut, onAuthStateChanged, User as FirebaseUser } from "firebase/auth";
+import { doc, getDoc, setDoc } from "firebase/firestore";
 
-const SESSION_KEY = 'erp_session_v1';
+// Username to Email mapping for "Login" convenience
+const EMAIL_DOMAIN = "cleanvillage.erp";
+const USER_MAPPING: Record<string, string> = {
+  'linsamsir': `linsamsir@${EMAIL_DOMAIN}`,
+  'carol7338425': `carol7338425@${EMAIL_DOMAIN}`,
+  'staff': `staff@${EMAIL_DOMAIN}`,
+  'admin': `admin@${EMAIL_DOMAIN}`
+};
 
-// Simple "Hash" for demo purposes. In production, use bcrypt/argon2.
-const hashPassword = (pwd: string) => `HASH_${btoa(pwd)}`;
+// Map Email to Role (Fallback if not in DB)
+const ROLE_MAPPING: Record<string, {name: string, role: UserRole}> = {
+  [`linsamsir@${EMAIL_DOMAIN}`]: { name: '林老闆', role: 'BOSS' },
+  [`carol7338425@${EMAIL_DOMAIN}`]: { name: 'Carol', role: 'MANAGER' },
+  [`staff@${EMAIL_DOMAIN}`]: { name: '小幫手', role: 'STAFF' },
+  [`admin@${EMAIL_DOMAIN}`]: { name: 'Admin', role: 'DECOY' }
+};
 
-// Specific Users Configuration
-const SYSTEM_USERS: User[] = [
-  { id: 'u_boss', username: 'linsamsir', name: '林老闆', role: 'BOSS', passwordHash: hashPassword('linsamsir') },
-  { id: 'u_manager', username: 'carol7338425', name: 'Carol', role: 'MANAGER', passwordHash: hashPassword('carol7338425') },
-  { id: 'u_staff', username: 'staff', name: '小幫手', role: 'STAFF', passwordHash: hashPassword('staff') },
-  { id: 'u_decoy', username: 'admin', name: 'Admin', role: 'DECOY', passwordHash: hashPassword('admin') }
-];
+let currentUser: User | null = null;
+let authInitialized = false;
 
+// Helpers
 export const auth = {
-  login: (username: string, password: string): { success: boolean; user?: User; message?: string } => {
-    // 1. Check against hardcoded system users first (Level 0 priority)
-    const systemUser = SYSTEM_USERS.find(u => u.username === username);
+  // Async Login
+  login: async (username: string, password: string): Promise<{ success: boolean; user?: User; message?: string }> => {
+    const email = USER_MAPPING[username] || username; // Allow direct email or username
     
-    if (!systemUser) {
-      return { success: false, message: '帳號或密碼錯誤' }; 
+    try {
+      const result = await signInWithEmailAndPassword(firebaseAuth, email, password);
+      // Determine Role
+      const user = await auth.syncUserRole(result.user);
+      return { success: true, user };
+    } catch (error: any) {
+      console.error("Login Error:", error);
+      let msg = "登入失敗";
+      if (error.code === 'auth/invalid-credential' || error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
+        msg = "帳號或密碼錯誤";
+      } else if (error.code === 'auth/too-many-requests') {
+        msg = "登入嘗試過多，請稍後再試";
+      }
+      return { success: false, message: msg };
     }
-
-    if (systemUser.passwordHash !== hashPassword(password)) {
-      return { success: false, message: '帳號或密碼錯誤' };
-    }
-
-    // 2. Set Session
-    const sessionData = JSON.stringify(systemUser);
-    localStorage.setItem(SESSION_KEY, sessionData);
-    
-    // 3. Log it (only if not decoy to avoid polluting logs, or log it as alert?)
-    // Let's log DECOY access as a security event if needed, but for now standard logging.
-    db.audit.log(
-      systemUser,
-      'AUTH',
-      'LOGIN',
-      { entityType: 'User', entityId: systemUser.id, entityName: systemUser.name },
-      systemUser.role === 'DECOY' ? '誘餌帳號登入嘗試' : '使用者登入'
-    );
-
-    return { success: true, user: systemUser };
   },
 
-  logout: () => {
-    const user = auth.getCurrentUser();
-    if (user && user.role !== 'DECOY') {
-      db.audit.log(
-        user,
-        'AUTH',
-        'LOGOUT',
-        { entityType: 'User', entityId: user.id, entityName: user.name },
-        '使用者登出'
-      );
+  logout: async () => {
+    try {
+      await signOut(firebaseAuth);
+      currentUser = null;
+      window.location.href = "/"; // Force redirect
+    } catch (error) {
+      console.error("Logout Error:", error);
     }
-    localStorage.removeItem(SESSION_KEY);
-    // Force reload to clear memory states and redirect
-    window.location.href = "/";
+  },
+
+  // State Management
+  init: (callback: (user: User | null) => void) => {
+    if (authInitialized) return callback(currentUser);
+    
+    onAuthStateChanged(firebaseAuth, async (fbUser) => {
+      if (fbUser) {
+        currentUser = await auth.syncUserRole(fbUser);
+      } else {
+        currentUser = null;
+      }
+      authInitialized = true;
+      callback(currentUser);
+    });
   },
 
   getCurrentUser: (): User | null => {
-    const data = localStorage.getItem(SESSION_KEY);
-    if (!data) return null;
-    try {
-      return JSON.parse(data);
-    } catch {
-      return null;
-    }
+    return currentUser;
   },
 
   isAuthenticated: (): boolean => {
-    return !!auth.getCurrentUser();
+    return !!currentUser;
   },
 
-  // --- Permission Helpers ---
-
-  // Write Access: Only Boss and Manager
-  canWrite: (): boolean => {
-    const user = auth.getCurrentUser();
-    return user?.role === 'BOSS' || user?.role === 'MANAGER';
-  },
-
-  // View Access: Boss, Manager, and Staff (Decoy is blocked from real data)
-  canViewData: (): boolean => {
-    const user = auth.getCurrentUser();
-    return ['BOSS', 'MANAGER', 'STAFF'].includes(user?.role || '');
-  },
-
-  // Admin/Sensitive Features (Settings, Full Logs, Financials)
-  isAdmin: (): boolean => {
-    const user = auth.getCurrentUser();
-    return user?.role === 'BOSS' || user?.role === 'MANAGER';
-  },
-
-  // --- Data Masking Logic ---
-  maskSensitiveData: <T>(data: T, type: 'money' | 'phone' | 'address' | 'generic'): string | number | T => {
-    const user = auth.getCurrentUser();
+  // Get/Set User Role from Firestore 'users' collection
+  syncUserRole: async (fbUser: FirebaseUser): Promise<User> => {
+    const userRef = doc(firebaseDb, "users", fbUser.uid);
+    const userSnap = await getDoc(userRef);
     
-    // Boss & Manager see everything
-    if (user?.role === 'BOSS' || user?.role === 'MANAGER') {
-      return data;
+    let role: UserRole = 'STAFF';
+    let name = fbUser.displayName || 'User';
+
+    if (userSnap.exists()) {
+      const data = userSnap.data();
+      role = data.role as UserRole;
+      name = data.name;
+    } else {
+      // First time login? Seed from hardcoded mapping
+      const mapping = ROLE_MAPPING[fbUser.email || ''] || { name: 'Unknown', role: 'STAFF' };
+      role = mapping.role;
+      name = mapping.name;
+      
+      // Save to DB for future reference
+      try {
+        await setDoc(userRef, { email: fbUser.email, role, name }, { merge: true });
+      } catch (e) {
+        console.warn("Failed to sync user role to DB:", e);
+      }
     }
 
-    // Decoy sees nothing/garbage
-    if (user?.role === 'DECOY') {
-      return '---';
-    }
+    const appUser: User = {
+      id: fbUser.uid,
+      username: fbUser.email?.split('@')[0] || 'user',
+      name,
+      role,
+      passwordHash: 'PROTECTED'
+    };
+    return appUser;
+  },
 
-    // Staff Rules
+  // Permissions
+  canWrite: (): boolean => {
+    return currentUser?.role === 'BOSS' || currentUser?.role === 'MANAGER';
+  },
+
+  canViewData: (): boolean => {
+    return ['BOSS', 'MANAGER', 'STAFF'].includes(currentUser?.role || '');
+  },
+
+  isAdmin: (): boolean => {
+    return currentUser?.role === 'BOSS' || currentUser?.role === 'MANAGER';
+  },
+
+  // Data Masking for STAFF
+  maskSensitiveData: <T>(data: T, type: 'money' | 'phone' | 'address' | 'generic'): string | number | T => {
+    const user = currentUser;
+    
+    if (user?.role === 'BOSS' || user?.role === 'MANAGER') return data;
+    if (user?.role === 'DECOY') return '---';
+
     if (user?.role === 'STAFF') {
       if (type === 'money') return '****';
       if (type === 'phone' && typeof data === 'string') {
-        // Show last 3 digits: 0912345678 -> *******678
         if (data.length < 4) return data;
-        return '*'.repeat(data.length - 3) + data.slice(-3);
+        return data.substring(0, 4) + '******'; // Mask middle/end
       }
       if (type === 'address' && typeof data === 'string') {
-        // Simple heuristic: hide numbers, keep text? Or just hide everything after 3 chars?
-        // Let's hide street numbers. Replace digits with *.
-        // "台北市信義區信義路五段7號" -> "台北市信義區信義路五段*號"
-        // Better: Keep City/District, mask detailed address.
-        // For simplicity: Mask all digits.
-        return data.replace(/\d/g, '*');
+        // Only show City/District (simple heuristic: first 6 chars)
+        return data.length > 6 ? data.substring(0, 6) + '...' : data;
       }
       if (type === 'generic') return '****';
     }
-
     return data;
   }
 };
