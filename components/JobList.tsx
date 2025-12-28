@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Job, JobStatus, AvatarType, ServiceItem } from '../types';
+import { Job, JobStatus, AvatarType, ServiceItem, Customer } from '../types';
 import { db } from '../services/db';
 import { auth } from '../services/auth';
 import ConfirmDialog from './ConfirmDialog';
@@ -14,6 +14,7 @@ interface JobListProps {
 
 const JobList: React.FC<JobListProps> = ({ onAdd, onEdit, onView }) => {
   const [jobs, setJobs] = React.useState<Job[]>([]);
+  const [customerMap, setCustomerMap] = React.useState<Record<string, Customer>>({});
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [searchTerm, setSearchTerm] = React.useState('');
@@ -24,8 +25,17 @@ const JobList: React.FC<JobListProps> = ({ onAdd, onEdit, onView }) => {
     setLoading(true);
     setError(null);
     try {
-      const jData = await db.jobs.list({ q: searchTerm });
+      // Parallel fetch for jobs and customers to resolve avatars
+      const [jData, cData] = await Promise.all([
+         db.jobs.list({ q: searchTerm }),
+         db.customers.getAll() // We need this to map avatars. Efficient enough for small apps.
+      ]);
       setJobs(jData);
+      
+      const map: Record<string, Customer> = {};
+      cData.forEach(c => map[c.customer_id] = c);
+      setCustomerMap(map);
+
     } catch (err: any) {
       console.error("Failed to fetch jobs", err);
       setError(err.message || "讀取任務失敗");
@@ -50,6 +60,26 @@ const JobList: React.FC<JobListProps> = ({ onAdd, onEdit, onView }) => {
   const getTotalAmount = (job: Job) => {
     const val = job.financial?.total_amount ?? job.totalPaid ?? 0;
     return auth.maskSensitiveData(val.toLocaleString(), 'money');
+  };
+
+  const getAvatarInfo = (type: AvatarType) => {
+    switch (type) {
+      case 'grandpa': return { icon: '👴', color: 'bg-stone-100' };
+      case 'grandma': return { icon: '👵', color: 'bg-orange-100' };
+      case 'man': return { icon: '👨', color: 'bg-blue-100' };
+      case 'woman': return { icon: '👩', color: 'bg-pink-100' };
+      default: return { icon: '🏠', color: 'bg-slate-100' };
+    }
+  };
+
+  const renderAvatar = (customerId: string) => {
+     const c = customerMap[customerId];
+     const info = getAvatarInfo(c?.avatar || 'man');
+     return (
+        <div className={`w-12 h-12 rounded-full border-2 border-white shadow-sm flex items-center justify-center text-2xl ${info.color}`}>
+           {info.icon}
+        </div>
+     );
   };
 
   return (
@@ -126,6 +156,9 @@ const JobList: React.FC<JobListProps> = ({ onAdd, onEdit, onView }) => {
 
               <div className="flex justify-between items-start mb-4">
                 <div className="flex items-center gap-3">
+                  {/* Restored Avatar */}
+                  {renderAvatar(job.customerId)}
+                  
                   <div>
                     <h3 className="text-lg font-black text-[#5d4a36] group-hover:text-[#78b833] transition-colors leading-tight">
                       {job.contactPerson}

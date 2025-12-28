@@ -4,9 +4,11 @@ import { db } from '../services/db';
 import { Job, Expense, AppSettings, L2LaborConfig } from '../types';
 import { auth } from '../services/auth';
 import ConfirmDialog from './ConfirmDialog';
+import ChatExpenseModal from './ChatExpenseModal';
+import ExpenseManager from './ExpenseManager'; // Import new component
 import { 
   TrendingUp, DollarSign, Target, Activity, CheckCircle2,
-  Settings, Zap, AlertTriangle, Loader2
+  Settings, Zap, AlertTriangle, Loader2, Plus, List
 } from 'lucide-react';
 
 const BossDashboard: React.FC = () => {
@@ -14,6 +16,8 @@ const BossDashboard: React.FC = () => {
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [rangeType, setRangeType] = React.useState('this_month');
+  const [showExpenseModal, setShowExpenseModal] = React.useState(false);
+  const [showExpenseManager, setShowExpenseManager] = React.useState(false); // New state
   
   const refreshData = async () => {
     setLoading(true);
@@ -60,10 +64,36 @@ const BossDashboard: React.FC = () => {
           </h1>
         </div>
         <div className="flex gap-2">
+           {/* New Button for Expense Manager */}
+           <button onClick={() => setShowExpenseManager(true)} className="px-4 py-2 rounded-xl font-bold border-2 border-red-200 text-red-500 bg-red-50 flex items-center gap-2 hover:bg-red-100">
+             <List size={20}/> 支出管理
+           </button>
+           
+           <button onClick={() => setShowExpenseModal(true)} className="px-4 py-2 rounded-xl font-bold bg-[#78b833] text-white shadow-md flex items-center gap-2 hover:bg-[#5a8d26] active:translate-y-1 transition-all">
+             <Plus size={20}/> 記一筆
+           </button>
            <button onClick={() => setRangeType('this_month')} className={`px-4 py-2 rounded-xl font-bold border-2 ${rangeType==='this_month' ? 'bg-[#5d4a36] text-white' : 'bg-white'}`}>本月</button>
            <button onClick={() => setRangeType('last_month')} className={`px-4 py-2 rounded-xl font-bold border-2 ${rangeType==='last_month' ? 'bg-[#5d4a36] text-white' : 'bg-white'}`}>上月</button>
         </div>
       </div>
+
+      {showExpenseModal && (
+        <ChatExpenseModal 
+          onClose={() => setShowExpenseModal(false)}
+          onSaved={() => {
+            setShowExpenseModal(false);
+            refreshData(); // Refresh dashboard numbers immediately
+          }}
+        />
+      )}
+
+      {/* Render Expense Manager Overlay */}
+      {showExpenseManager && (
+        <ExpenseManager onClose={() => {
+          setShowExpenseManager(false);
+          refreshData(); // Refresh numbers on close
+        }} />
+      )}
 
       {error && (
         <div className="bg-red-50 p-6 rounded-2xl border-2 border-red-100 flex items-center gap-4 text-red-600">
@@ -83,10 +113,10 @@ const BossDashboard: React.FC = () => {
               <div className="mt-2 text-sm font-bold opacity-70">{data.jobCount} 張工單</div>
            </div>
            
-           <div className="ac-card bg-red-400 text-white border-none">
-              <div className="flex items-center gap-2 mb-2 opacity-80"><Zap size={20}/> 總支出</div>
+           <div className="ac-card bg-red-400 text-white border-none cursor-pointer hover:scale-[1.02] transition-transform" onClick={() => setShowExpenseManager(true)}>
+              <div className="flex items-center gap-2 mb-2 opacity-80"><Zap size={20}/> 總支出 (點擊管理)</div>
               <div className="text-4xl font-black">${maskedVal(data.cost)}</div>
-              <div className="mt-2 text-sm font-bold opacity-70">{data.expenseCount} 筆費用</div>
+              <div className="mt-2 text-sm font-bold opacity-70">{data.expenseCount} 筆費用 (不含純現金流)</div>
            </div>
 
            <div className="ac-card bg-[#e8dcb9] text-[#5d4a36] border-none">

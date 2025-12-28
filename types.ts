@@ -216,6 +216,9 @@ export interface Expense {
   // Chat Input Metadata
   source?: 'manual_form' | 'chat_input';
   raw_input?: string;
+  
+  // A. Cashflow Mode Support
+  cashflowOnly?: boolean; // If true, excluded from Net Profit (P&L), only affects Cashflow report
 }
 
 export interface AppSettings {
@@ -242,6 +245,10 @@ export interface L2Asset {
   lifespanMonths: number;
   status: 'active' | 'retired' | 'maintenance';
   deletedAt?: string;
+  category?: string; // e.g., 電動工具, 耗材
+  note?: string; 
+  qty?: number; // Added
+  unit?: string; // Added (e.g. 台, 組)
 }
 
 export interface L2StockLog {

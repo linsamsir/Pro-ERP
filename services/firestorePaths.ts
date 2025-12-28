@@ -10,4 +10,5 @@ export const COLLECTIONS = {
   L2_STOCK: 'l2_stock',
   AUDIT_LOGS: 'audit_logs',
   USERS: 'users',
+  COUNTERS: 'counters', // For atomic ID generation
 };

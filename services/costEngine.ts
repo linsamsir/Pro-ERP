@@ -86,7 +86,7 @@ export const CostEngine = {
     const monthlyJobs = jobs.filter(j => j.status === JobStatus.COMPLETED && j.serviceDate.startsWith(datePrefix));
     const revenue = monthlyJobs.reduce((sum, j) => sum + (j.financial?.total_amount || j.totalPaid || 0), 0);
 
-    // 2. Labor (Module C)
+    // 2. Labor (Module C) - Fixed Cost
     const labor = settings.monthlySalary; // Fixed monthly
 
     // 3. Consumables (Module A - Logic)
@@ -103,8 +103,10 @@ export const CostEngine = {
     const depreciation = CostEngine.calculateDepreciation(assets, year, month);
 
     // 5. Overhead (Module D)
+    // EXCLUDE cashflowOnly expenses from Net Profit calculation
     const overhead = expenses
       .filter(e => e.date.startsWith(datePrefix))
+      .filter(e => !e.cashflowOnly) 
       .reduce((sum, e) => sum + e.amount, 0);
 
     return {

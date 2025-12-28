@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { Job, Customer, JobStatus, ServiceItem, AvatarType } from '../types';
 import { db } from '../services/db';
@@ -5,7 +6,7 @@ import { auth } from '../services/auth';
 import ConfirmDialog from './ConfirmDialog';
 import { 
   ArrowLeft, Edit3, Calendar, Clock, MapPin, Phone, 
-  Wrench, Beaker, DollarSign, FileText, Building2, CheckCircle2, User, Share2, Printer, Zap, ArrowRight, Trash2, Car, Droplets, Tag, CreditCard, Receipt
+  Wrench, Beaker, DollarSign, FileText, Building2, CheckCircle2, User, Share2, Printer, Zap, ArrowRight, Trash2, Car, Droplets, Tag, CreditCard, Receipt, Waves
 } from 'lucide-react';
 
 interface JobDetailProps {
@@ -146,48 +147,89 @@ const JobDetail: React.FC<JobDetailProps> = ({ job, onBack, onEdit }) => {
           </div>
         </div>
 
-        {/* Specs & Config */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-           <div className="ac-bubble p-6 bg-white">
-              <h4 className="text-sm font-black text-[#5d4a36] mb-4 flex items-center gap-2"><Droplets size={16} className="text-blue-400"/> 水塔配置</h4>
-              <div className="space-y-3">
-                 {job.tankConfigs.map((tank, i) => (
-                    <div key={i} className="flex justify-between items-center bg-blue-50 p-3 rounded-xl border border-blue-100">
-                       <span className="text-sm font-bold text-blue-900">{tank.tonnage}噸 {tank.material}</span>
-                       <div className="flex gap-2 text-xs">
-                          <span className="bg-white px-2 py-1 rounded text-blue-500 font-bold">{tank.location}</span>
-                          <span className="bg-white px-2 py-1 rounded text-blue-500 font-bold">{tank.count}顆</span>
-                          {tank.hasMotor && <span className="bg-orange-100 text-orange-600 px-2 py-1 rounded font-bold">馬達</span>}
-                       </div>
-                    </div>
-                 ))}
-              </div>
-           </div>
+        {/* Specs & Config Grid - Fixed Layout */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-stretch">
            
-           <div className="ac-bubble p-6 bg-white">
-              <h4 className="text-sm font-black text-[#5d4a36] mb-4 flex items-center gap-2"><Receipt size={16} className="text-orange-400"/> 財務明細</h4>
-              <div className="space-y-2">
-                 <div className="flex justify-between text-sm">
-                    <span className="text-slate-400">付款方式</span>
-                    <span className="font-bold text-[#5d4a36]">{job.financial?.payment_method || job.paymentMethod}</span>
-                 </div>
-                 <div className="flex justify-between text-sm">
-                    <span className="text-slate-400">發票開立</span>
-                    <span className="font-bold text-[#5d4a36]">{job.financial?.invoice_issued || job.invoiceNeeded ? '已開立' : '未開立'}</span>
-                 </div>
-                 {(job.financial?.extra_items || []).length > 0 && (
-                   <div className="border-t border-dashed pt-2 mt-2">
-                      <div className="text-xs text-slate-400 mb-1">追加項目</div>
-                      {job.financial?.extra_items?.map((ex, i) => (
-                        <div key={i} className="flex justify-between text-xs font-bold text-orange-600">
-                           <span>{ex.name}</span>
-                           <span>+${auth.maskSensitiveData(ex.amount, 'money')}</span>
-                        </div>
-                      ))}
-                   </div>
-                 )}
-              </div>
+           {/* Water Tank Config Card */}
+           <div className={`ac-bubble p-6 bg-white h-full ${!job.serviceItems.includes(ServiceItem.TANK) ? 'opacity-50 grayscale' : ''}`}>
+              <h4 className="text-sm font-black text-[#5d4a36] mb-4 flex items-center gap-2">
+                 <Droplets size={16} className="text-blue-400"/> 水塔配置
+                 {!job.serviceItems.includes(ServiceItem.TANK) && <span className="text-[10px] bg-slate-100 text-slate-400 px-2 py-0.5 rounded">未施作</span>}
+              </h4>
+              {job.serviceItems.includes(ServiceItem.TANK) && (
+                <div className="space-y-3">
+                   {job.tankConfigs.map((tank, i) => (
+                      <div key={i} className="flex justify-between items-center bg-blue-50 p-3 rounded-xl border border-blue-100">
+                         <span className="text-sm font-bold text-blue-900">{tank.tonnage}噸 {tank.material}</span>
+                         <div className="flex gap-2 text-xs">
+                            <span className="bg-white px-2 py-1 rounded text-blue-500 font-bold">{tank.location}</span>
+                            <span className="bg-white px-2 py-1 rounded text-blue-500 font-bold">{tank.count}顆</span>
+                            {tank.hasMotor && <span className="bg-orange-100 text-orange-600 px-2 py-1 rounded font-bold">馬達</span>}
+                         </div>
+                      </div>
+                   ))}
+                </div>
+              )}
            </div>
+
+           {/* Water Pipe Config Card */}
+           <div className={`ac-bubble p-6 bg-white h-full ${!job.serviceItems.includes(ServiceItem.PIPE) ? 'opacity-50 grayscale' : ''}`}>
+              <h4 className="text-sm font-black text-[#5d4a36] mb-4 flex items-center gap-2">
+                 <Waves size={16} className="text-cyan-500"/> 水管配置
+                 {!job.serviceItems.includes(ServiceItem.PIPE) && <span className="text-[10px] bg-slate-100 text-slate-400 px-2 py-0.5 rounded">未施作</span>}
+              </h4>
+              {job.serviceItems.includes(ServiceItem.PIPE) && (
+                <div className="space-y-3">
+                   <div className="flex justify-between items-center bg-cyan-50 p-3 rounded-xl border border-cyan-100">
+                      <span className="text-sm font-bold text-cyan-900">格局</span>
+                      <div className="flex gap-2 text-xs">
+                         <span className="bg-white px-2 py-1 rounded text-cyan-600 font-bold">{job.bathroomCount} 衛</span>
+                         <span className="bg-white px-2 py-1 rounded text-cyan-600 font-bold">{job.kitchenCount} 廚</span>
+                      </div>
+                   </div>
+                   <div className="flex justify-between items-center bg-cyan-50 p-3 rounded-xl border border-cyan-100">
+                      <span className="text-sm font-bold text-cyan-900">熱水器</span>
+                      <span className="bg-white px-2 py-1 rounded text-cyan-600 font-bold text-xs">{job.waterHeaterType || '未填寫'}</span>
+                   </div>
+                   <div className="grid grid-cols-2 gap-2 mt-2">
+                      <div className="text-xs text-center p-2 bg-slate-50 rounded-lg">
+                         <span className="block text-slate-400 mb-1">清洗前</span>
+                         <span className="font-bold text-[#5d4a36]">{job.pipeBeforeStatus || '-'}</span>
+                      </div>
+                      <div className="text-xs text-center p-2 bg-green-50 rounded-lg border border-green-100">
+                         <span className="block text-green-400 mb-1">清洗後</span>
+                         <span className="font-bold text-green-700">{job.pipeAfterStatus || '-'}</span>
+                      </div>
+                   </div>
+                </div>
+              )}
+           </div>
+        </div>
+           
+        {/* Financials & Notes */}
+        <div className="ac-bubble p-6 bg-white">
+            <h4 className="text-sm font-black text-[#5d4a36] mb-4 flex items-center gap-2"><Receipt size={16} className="text-orange-400"/> 財務明細</h4>
+            <div className="space-y-2">
+                <div className="flex justify-between text-sm">
+                <span className="text-slate-400">付款方式</span>
+                <span className="font-bold text-[#5d4a36]">{job.financial?.payment_method || job.paymentMethod}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                <span className="text-slate-400">發票開立</span>
+                <span className="font-bold text-[#5d4a36]">{job.financial?.invoice_issued || job.invoiceNeeded ? '已開立' : '未開立'}</span>
+                </div>
+                {(job.financial?.extra_items || []).length > 0 && (
+                <div className="border-t border-dashed pt-2 mt-2">
+                    <div className="text-xs text-slate-400 mb-1">追加項目</div>
+                    {job.financial?.extra_items?.map((ex, i) => (
+                    <div key={i} className="flex justify-between text-xs font-bold text-orange-600">
+                        <span>{ex.name}</span>
+                        <span>+${auth.maskSensitiveData(ex.amount, 'money')}</span>
+                    </div>
+                    ))}
+                </div>
+                )}
+            </div>
         </div>
 
         {/* Tags & Notes */}

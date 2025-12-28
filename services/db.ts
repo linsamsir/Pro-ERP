@@ -4,7 +4,7 @@ import { db as firestore } from './firebase';
 import { auth } from './auth';
 import { AuditService } from './audit';
 import { COLLECTIONS } from './firestorePaths';
-import { collection, doc, getDocs, getDoc, setDoc, updateDoc, query, where, orderBy, limit, serverTimestamp, Timestamp } from "firebase/firestore";
+import { collection, doc, getDocs, getDoc, setDoc, updateDoc, query, where, orderBy, limit, serverTimestamp, Timestamp, runTransaction } from "firebase/firestore";
 import { extractAiTags, getAiCooldownSeconds } from './gemini';
 
 // --- Helper: Deep Masking for Staff View ---
@@ -45,9 +45,6 @@ export const db = {
     list: async (params: { q?: string } = {}) => {
       try {
         console.log("[DB] Fetching customers...");
-        // CRITICAL FIX: Do NOT use where('deleted_at', '==', null) server-side.
-        // Legacy data might not have the field, causing it to be hidden.
-        // Fetch all, filter client-side.
         const ref = collection(firestore, COLLECTIONS.CUSTOMERS);
         const qRef = query(ref, limit(1000)); // Safety limit
         
@@ -77,16 +74,90 @@ export const db = {
       }
     },
     getAll: async () => {
-      // Alias for compatibility
       return db.customers.list(); 
     },
     get: async (id: string) => {
+      if (!id) return undefined; // FIX: Guard against empty ID
       try {
         const snap = await getDoc(doc(firestore, COLLECTIONS.CUSTOMERS, id));
         if (!snap.exists()) return undefined;
         return deepMask({ ...snap.data(), customer_id: snap.id } as Customer);
       } catch (e) {
         handleDbError('getCustomer', e);
+      }
+    },
+    // Atomic Create with Auto ID (Transaction + Fallback)
+    createWithAutoId: async (customerData: Omit<Customer, 'customer_id'>): Promise<Customer> => {
+      if (!auth.canWrite()) throw new Error("Permission Denied");
+      
+      const prepareCustomer = (id: string): Customer => {
+        const now = new Date().toISOString();
+        const displayName = customerData.customerType === '公司'
+          ? `${customerData.companyName || ''} ${customerData.contactName}`.trim()
+          : customerData.contactName;
+        return {
+          ...customerData,
+          customer_id: id,
+          displayName,
+          created_at: now,
+          updated_at: now
+        };
+      };
+
+      try {
+        // Strategy A: Transaction on Counters
+        return await runTransaction(firestore, async (transaction) => {
+          const counterRef = doc(firestore, COLLECTIONS.COUNTERS, 'customers');
+          const counterSnap = await transaction.get(counterRef);
+          
+          let nextId = 1;
+          if (counterSnap.exists()) {
+            nextId = (counterSnap.data().count || 0) + 1;
+          }
+          
+          const formattedId = `C${nextId.toString().padStart(7, '0')}`;
+          const newCustomer = prepareCustomer(formattedId);
+          const customerRef = doc(firestore, COLLECTIONS.CUSTOMERS, formattedId);
+          
+          transaction.set(counterRef, { count: nextId }, { merge: true });
+          transaction.set(customerRef, newCustomer);
+          
+          return newCustomer;
+        });
+      } catch (e: any) {
+        console.warn("[DB] Transaction failed (likely permission), attempting fallback strategy.", e.message);
+        
+        // Strategy B: Fallback (Query Max ID)
+        try {
+            const q = query(collection(firestore, COLLECTIONS.CUSTOMERS), orderBy('customer_id', 'desc'), limit(1));
+            const snap = await getDocs(q);
+            
+            let maxIdVal = 0;
+            if (!snap.empty) {
+                const latest = snap.docs[0].data() as Customer;
+                const match = (latest.customer_id || '').match(/^C(\d+)$/);
+                if (match) {
+                    maxIdVal = parseInt(match[1], 10);
+                }
+            }
+            
+            const nextIdVal = maxIdVal + 1;
+            const formattedId = `C${nextIdVal.toString().padStart(7, '0')}`;
+            const newCustomer = prepareCustomer(formattedId);
+            
+            await setDoc(doc(firestore, COLLECTIONS.CUSTOMERS, formattedId), newCustomer);
+            
+            // Audit log for fallback creation
+            await AuditService.log({
+                action: 'CREATE', module: 'CUSTOMER', entityId: formattedId,
+                entityName: newCustomer.displayName, summary: `新增村民 (Fallback): ${newCustomer.displayName}`, after: newCustomer
+            }, auth.getCurrentUser());
+
+            return newCustomer;
+        } catch (fallbackError) {
+            handleDbError('createCustomerWithAutoId_Fallback', fallbackError);
+            throw fallbackError;
+        }
       }
     },
     save: async (customer: Customer) => {
@@ -138,7 +209,7 @@ export const db = {
         handleDbError('deleteCustomer', e);
       }
     },
-    generateId: () => `C${Date.now().toString(36).toUpperCase()}`
+    generateId: () => `C${Date.now().toString(36).toUpperCase()}` // Legacy Fallback
   },
 
   // 2. Jobs Repo
@@ -146,14 +217,9 @@ export const db = {
     list: async (params: { startDate?: string, endDate?: string, q?: string } = {}) => {
       try {
         console.log("[DB] Fetching jobs...", params);
-        // CRITICAL FIX: Fetch all first, then filter. Avoids index requirements for basic view.
         const ref = collection(firestore, COLLECTIONS.JOBS);
-        // orderBy 'serviceDate' requires index if mixed with where. Let's do raw fetch first.
-        // We limit to 500 recent jobs to prevent explosion.
-        // Ideally: orderBy('serviceDate', 'desc')
         let qRef = query(ref, orderBy('serviceDate', 'desc'), limit(500));
         
-        // Fallback: If orderBy fails due to index, try basic fetch
         let snap;
         try {
            snap = await getDocs(qRef);
@@ -204,11 +270,10 @@ export const db = {
         const snap = await getDoc(ref);
         const now = new Date().toISOString();
         
-        // Fix: Add timestamps fields for better querying later
         const jobToSave = { 
           ...job, 
           updatedAt: now,
-          serviceDateStr: job.serviceDate, // Explicit string field
+          serviceDateStr: job.serviceDate, 
           serviceDateTs: job.serviceDate ? Timestamp.fromDate(new Date(job.serviceDate)) : null
         };
 
@@ -229,8 +294,7 @@ export const db = {
         }
 
         // Sync Customer Last Service
-        if (job.status === JobStatus.COMPLETED) {
-           // ... (Same sync logic as before) ...
+        if (job.status === JobStatus.COMPLETED && job.customerId) { // FIX: Guard
            try {
              const custRef = doc(firestore, COLLECTIONS.CUSTOMERS, job.customerId);
              const custSnap = await getDoc(custRef);
@@ -284,7 +348,6 @@ export const db = {
     list: async (params: { startDate?: string, endDate?: string } = {}) => {
       try {
         const ref = collection(firestore, COLLECTIONS.EXPENSES);
-        // Fallback to basic fetch if index issues arise
         let snap;
         try {
            const q = query(ref, orderBy('date', 'desc'), limit(500));
@@ -301,8 +364,8 @@ export const db = {
         
         return list.map(e => deepMask(e));
       } catch (e) {
-        console.error("Expenses list failed (might be missing collection)", e);
-        return []; // Return empty if collection doesn't exist yet
+        console.error("Expenses list failed", e);
+        return [];
       }
     },
     getAll: async () => db.expenses.list(),
@@ -316,7 +379,6 @@ export const db = {
         } else {
           await setDoc(ref, expense);
         }
-        // Simplified audit for expenses to save space
       } catch (e) { handleDbError('saveExpense', e); }
     },
     delete: async (id: string) => {
@@ -363,7 +425,6 @@ export const db = {
         }
         return def;
       } catch (e) {
-        // Fallback silently for settings
         return { monthlyTarget: 150000, monthlySalary: 60000, laborBreakdown: { bossSalary: 30000, partnerSalary: 30000 }, consumables: { citricCostPerCan: 50, chemicalDrumCost: 3000, chemicalDrumToBottles: 20 } };
       }
     },
@@ -384,7 +445,7 @@ export const db = {
     assets: {
       getAll: async () => {
         try {
-          const q = query(collection(firestore, COLLECTIONS.L2_ASSETS)); // simplified query
+          const q = query(collection(firestore, COLLECTIONS.L2_ASSETS));
           const snap = await getDocs(q);
           let list = snap.docs.map(d => ({ ...d.data(), id: d.id } as L2Asset));
           list = list.filter(i => !i.deletedAt);
@@ -446,15 +507,18 @@ export const db = {
     }
   },
 
-  // 7. Dashboard Summary (Aggregated)
+  // 7. Dashboard Summary
   dashboard: {
     getSummary: async (startDate: string, endDate: string) => {
-      // Fetch raw lists and aggregate in JS to avoid complex Firestore aggregations
       const jobs = await db.jobs.list({ startDate, endDate });
       const expenses = await db.expenses.list({ startDate, endDate });
       
       const revenue = jobs.reduce((sum, j) => sum + (j.financial?.total_amount || j.totalPaid || 0), 0);
-      const cost = expenses.reduce((sum, e) => sum + e.amount, 0);
+      
+      // Fix: Exclude cashflow-only expenses from Net Profit calculation
+      const cost = expenses
+        .filter(e => !e.cashflowOnly) 
+        .reduce((sum, e) => sum + e.amount, 0);
       
       return {
         revenue,
@@ -462,7 +526,7 @@ export const db = {
         netProfit: revenue - cost,
         jobCount: jobs.length,
         expenseCount: expenses.length,
-        recentJobs: jobs.slice(0, 20) // Provide recent for display
+        recentJobs: jobs.slice(0, 20)
       };
     }
   }

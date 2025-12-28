@@ -2,7 +2,8 @@
 import React from 'react';
 import { Customer, Preference, BuildingType, PhoneRecord, CustomerSource, SocialAccount, AvatarType } from '../types';
 import { db } from '../services/db';
-import { Save, X, Plus, Trash2, Building2, User, Phone, MapPin, Share2, Search, ArrowRight, MessageCircle, Facebook, Instagram, Globe, Smile } from 'lucide-react';
+import { auth } from '../services/auth';
+import { Save, X, Plus, Trash2, User, Phone, MapPin, Share2, Search, Smile, Lock } from 'lucide-react';
 
 interface CustomerFormProps {
   initialData?: Partial<Customer>;
@@ -12,9 +13,10 @@ interface CustomerFormProps {
 }
 
 const CustomerForm: React.FC<CustomerFormProps> = ({ initialData, onCancel, onSave, mode = 'page' }) => {
+  const isEditing = !!initialData?.customer_id;
+  
   // --- Local State ---
   const [c, setC] = React.useState<Partial<Customer>>({
-    customer_id: db.customers.generateId(),
     customerType: '個人',
     contactName: '',
     companyName: '',
@@ -92,35 +94,33 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ initialData, onCancel, onSa
     setReferrerSearch(''); 
   };
 
-  const handleQuickReferrerAdd = () => {
+  const handleQuickReferrerAdd = async () => {
     if (!referrerQuickName || !referrerQuickPhone) return alert('請輸入介紹人姓名與電話');
     
-    const newRefId = db.customers.generateId();
-    const newRef: Customer = {
-      customer_id: newRefId,
-      customerType: '個人',
-      contactName: referrerQuickName,
-      displayName: referrerQuickName,
-      phones: [{ number: referrerQuickPhone, type: '手機', isPrimary: true, label: '快速新增' }],
-      addresses: [{ text: '', isPrimary: true }],
-      building_type: BuildingType.OTHER,
-      has_elevator: false,
-      is_returning: false,
-      ai_tags: [],
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      avatar: 'man',
-      socialAccounts: [],
-      preference: Preference.PHONE
-    };
-    db.customers.save(newRef);
-    setAllCustomers(prev => [...prev, newRef]);
+    // Quick Add must also use atomic ID
+    const newRef = await db.customers.createWithAutoId({
+        customerType: '個人',
+        contactName: referrerQuickName,
+        displayName: referrerQuickName,
+        phones: [{ number: referrerQuickPhone, type: '手機', isPrimary: true, label: '快速新增' }],
+        addresses: [{ text: '', isPrimary: true }],
+        building_type: BuildingType.OTHER,
+        has_elevator: false,
+        is_returning: false,
+        ai_tags: [],
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        avatar: 'man',
+        socialAccounts: [],
+        preference: Preference.PHONE
+    });
     
-    handleReferrerSelect(newRefId, referrerQuickName);
+    setAllCustomers(prev => [...prev, newRef]);
+    handleReferrerSelect(newRef.customer_id, referrerQuickName);
     setShowReferrerInput(false);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!c.contactName) return alert("請輸入聯絡人姓名！");
@@ -131,15 +131,22 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ initialData, onCancel, onSa
       displayName = `${c.companyName} ${c.contactName}`;
     }
 
-    const finalCustomer: Customer = {
+    const payload = {
       ...(c as Customer),
       displayName,
-      created_at: c.created_at || new Date().toISOString(),
+      // Ensure timestamps
       updated_at: new Date().toISOString(),
     };
 
-    db.customers.save(finalCustomer);
-    onSave(finalCustomer);
+    if (isEditing && c.customer_id) {
+       // Update existing
+       await db.customers.save(payload);
+       onSave(payload);
+    } else {
+       // Create new (Atomic ID)
+       const newCustomer = await db.customers.createWithAutoId(payload);
+       onSave(newCustomer);
+    }
   };
 
   // Avatar Options
@@ -165,7 +172,7 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ initialData, onCancel, onSa
         {/* Header */}
         <div className="sticky top-0 bg-[#fffbf0]/95 backdrop-blur-sm p-6 border-b-2 border-[#e8dcb9] flex justify-between items-center z-10">
           <div>
-            <h2 className="text-h2 text-[#5d4a36]">新增村民</h2>
+            <h2 className="text-h2 text-[#5d4a36]">{isEditing ? '編輯村民' : '新增村民'}</h2>
             <p className="text-note font-bold">建立資料後自動開始回報</p>
           </div>
           <button onClick={onCancel} className="p-2 bg-white rounded-full text-[#b59a7a] hover:bg-slate-100">
@@ -175,6 +182,15 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ initialData, onCancel, onSa
 
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
           
+          {/* ID field - Simplified */}
+          <div className="bg-slate-100 p-3 rounded-xl border border-slate-200 flex items-center justify-between opacity-70">
+             <div className="text-xs font-bold text-slate-400 uppercase tracking-widest">Customer ID</div>
+             <div className="flex items-center gap-2 font-mono font-black text-[#5d4a36]">
+                <Lock size={14} className="text-slate-400"/>
+                {c.customer_id || "儲存後自動生成"}
+             </div>
+          </div>
+
           {/* Avatar Selection */}
           <div className="ac-card bg-white">
             <label className="text-note mb-3 block flex items-center gap-1"><Smile size={16}/> 選擇頭像</label>

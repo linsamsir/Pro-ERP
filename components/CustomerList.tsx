@@ -184,6 +184,16 @@ const CustomerList: React.FC<CustomerListProps> = ({ onAdd, onEdit }) => {
                     <div className="text-[9px] font-bold text-[#b59a7a] uppercase tracking-tighter">{c.customer_id}</div>
                   </div>
                 </div>
+                {/* Status Badges - RESTORED */}
+                <div className="flex flex-col items-end gap-1">
+                   {c.is_returning && (
+                      <span className="text-[10px] font-black bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full flex items-center gap-1">
+                        <History size={8}/> 回流
+                      </span>
+                   )}
+                   {c.interactionStatus === 'angel' && <span className="text-lg" title="天使客人">😇</span>}
+                   {c.interactionStatus === 'devil' && <span className="text-lg" title="黑名單">😈</span>}
+                </div>
               </div>
               <div className="space-y-1 mb-4">
                 <div className="flex items-center gap-2 text-xs font-bold text-[#b59a7a]">
@@ -194,6 +204,16 @@ const CustomerList: React.FC<CustomerListProps> = ({ onAdd, onEdit }) => {
                   <span className="line-clamp-1">{getPrimaryAddress(c)}</span>
                 </div>
               </div>
+              
+              {/* Tags Section - RESTORED */}
+              {c.ai_tags && c.ai_tags.length > 0 && (
+                 <div className="flex gap-1 flex-wrap pt-2 border-t border-slate-100">
+                    {c.ai_tags.slice(0, 3).map(t => (
+                      <span key={t} className="text-[9px] bg-slate-50 text-slate-400 px-2 py-1 rounded border border-slate-100">#{t}</span>
+                    ))}
+                    {c.ai_tags.length > 3 && <span className="text-[9px] text-slate-300">+{c.ai_tags.length - 3}</span>}
+                 </div>
+              )}
             </div>
           ))}
         </div>

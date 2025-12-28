@@ -1,8 +1,10 @@
+
 import React from 'react';
 import { db } from '../services/db';
 import { L2Asset, L2StockLog, Job, Expense, AppSettings } from '../types';
 import { CostEngine, MonthlyCostReport } from '../services/costEngine';
-import { X, PieChart, Package, Truck, HardHat, Receipt, Trash2, Plus, Calendar, Download, ChevronLeft, ChevronRight, AlertCircle } from 'lucide-react';
+import { DEFAULT_ASSETS } from '../data/defaultAssets'; // Import seed
+import { X, PieChart, Package, Truck, HardHat, Receipt, Trash2, Plus, Calendar, Download, ChevronLeft, ChevronRight, AlertCircle, Import } from 'lucide-react';
 
 interface CostAnalysisModuleProps {
   onClose: () => void;
@@ -30,7 +32,7 @@ const CostAnalysisModule: React.FC<CostAnalysisModuleProps> = ({ onClose }) => {
 
   // Forms
   const [showAssetForm, setShowAssetForm] = React.useState(false);
-  const [newAsset, setNewAsset] = React.useState<Partial<L2Asset>>({ name: '', cost: 0, lifespanMonths: 24, purchaseDate: new Date().toLocaleDateString('en-CA'), status: 'active' });
+  const [newAsset, setNewAsset] = React.useState<Partial<L2Asset>>({ name: '', cost: 0, lifespanMonths: 24, purchaseDate: new Date().toLocaleDateString('en-CA'), status: 'active', qty: 1, unit: '個' });
 
   const [showStockForm, setShowStockForm] = React.useState(false);
   const [newStock, setNewStock] = React.useState<Partial<L2StockLog>>({ itemType: 'citric', purchaseType: 'bulk', quantity: 1, totalCost: 0, yieldPerUnit: 20 });
@@ -76,9 +78,42 @@ const CostAnalysisModule: React.FC<CostAnalysisModuleProps> = ({ onClose }) => {
 
   // --- Handlers ---
   const handleAddAsset = async () => {
-    if (!newAsset.name || !newAsset.cost) return;
+    if (!newAsset.name) return; // Cost can be 0
     await db.l2.assets.save({ ...newAsset, id: db.l2.assets.generateId() } as L2Asset);
     setShowAssetForm(false);
+    refreshData();
+  };
+
+  // Import Default Assets Logic - IDEMPOTENT
+  const handleImportDefaults = async () => {
+    if (!confirm("確定要匯入預設施工設備清單？(重複的項目將自動跳過)")) return;
+    
+    let count = 0;
+    for (const def of DEFAULT_ASSETS) {
+      // Check duplicate by name and category (stronger check)
+      const exists = assets.some(a => 
+        a.name === def.name && 
+        a.category === def.category &&
+        a.status !== 'retired'
+      );
+      
+      if (!exists) {
+        await db.l2.assets.save({
+          id: db.l2.assets.generateId(),
+          name: def.name || '未命名設備',
+          category: def.category || '未分類',
+          note: def.note || '',
+          qty: def.qty || 1,
+          unit: def.unit || '個',
+          cost: 0, // Default to 0, user updates later
+          lifespanMonths: 24,
+          purchaseDate: new Date().toLocaleDateString('en-CA'),
+          status: 'active'
+        });
+        count++;
+      }
+    }
+    alert(`匯入完成！新增了 ${count} 項設備。請記得去編輯「購入金額」。`);
     refreshData();
   };
 
@@ -114,7 +149,7 @@ const CostAnalysisModule: React.FC<CostAnalysisModuleProps> = ({ onClose }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-[60] bg-[#fbf8e6] overflow-auto animate-in slide-in-from-bottom-10">
+    <div className="fixed inset-0 md:left-72 z-[60] bg-[#fbf8e6] overflow-auto animate-in slide-in-from-bottom-10 shadow-2xl">
       {/* Header */}
       <div className="sticky top-0 bg-[#fffbf0]/95 backdrop-blur-sm p-4 border-b-2 border-[#e8dcb9] flex justify-between items-center z-10 shadow-sm">
         <h2 className="text-2xl font-black text-[#5d4a36] flex items-center gap-3">
@@ -220,19 +255,29 @@ const CostAnalysisModule: React.FC<CostAnalysisModuleProps> = ({ onClose }) => {
              <div className="space-y-4 animate-in fade-in">
                 <div className="flex justify-between items-center">
                    <h3 className="text-xl font-black text-[#5d4a36]">設備資產清冊</h3>
-                   <button onClick={() => setShowAssetForm(!showAssetForm)} className="ac-btn-green px-4 py-2 flex items-center gap-1 text-sm"><Plus size={16}/> 新增資產</button>
+                   <div className="flex gap-2">
+                     <button onClick={handleImportDefaults} className="bg-blue-50 text-blue-600 border-blue-100 border-2 px-4 py-2 rounded-xl flex items-center gap-1 font-bold text-sm hover:bg-blue-100">
+                        <Import size={16}/> 一鍵匯入預設備品
+                     </button>
+                     <button onClick={() => setShowAssetForm(!showAssetForm)} className="ac-btn-green px-4 py-2 flex items-center gap-1 text-sm"><Plus size={16}/> 新增資產</button>
+                   </div>
                 </div>
                 
                 {showAssetForm && (
                   <div className="bg-white p-4 rounded-2xl border-2 border-[#e8dcb9] space-y-3">
                      <div className="grid grid-cols-2 gap-3">
-                        <input className="input-nook py-1" placeholder="設備名稱 (e.g. 高壓清洗機)" value={newAsset.name} onChange={e => setNewAsset({...newAsset, name: e.target.value})} />
-                        <input className="input-nook py-1" type="date" value={newAsset.purchaseDate} onChange={e => setNewAsset({...newAsset, purchaseDate: e.target.value})} />
+                        <input className="input-nook py-1" placeholder="類別 (e.g. 電動工具)" value={newAsset.category} onChange={e => setNewAsset({...newAsset, category: e.target.value})} />
+                        <input className="input-nook py-1" placeholder="品項名稱" value={newAsset.name} onChange={e => setNewAsset({...newAsset, name: e.target.value})} />
                      </div>
-                     <div className="grid grid-cols-2 gap-3">
-                        <input className="input-nook py-1" type="number" placeholder="購入金額" value={newAsset.cost || ''} onChange={e => setNewAsset({...newAsset, cost: parseInt(e.target.value)})} />
-                        <input className="input-nook py-1" type="number" placeholder="耐用月數 (預設24)" value={newAsset.lifespanMonths} onChange={e => setNewAsset({...newAsset, lifespanMonths: parseInt(e.target.value)})} />
+                     <div className="grid grid-cols-3 gap-3">
+                        <input className="input-nook py-1" type="number" placeholder="成本" value={newAsset.cost || ''} onChange={e => setNewAsset({...newAsset, cost: parseInt(e.target.value)})} />
+                        <div className="flex gap-1">
+                           <input className="input-nook py-1" type="number" placeholder="數量" value={newAsset.qty || 1} onChange={e => setNewAsset({...newAsset, qty: parseInt(e.target.value)})} />
+                           <input className="input-nook py-1 w-16 text-center" placeholder="單位" value={newAsset.unit || '個'} onChange={e => setNewAsset({...newAsset, unit: e.target.value})} />
+                        </div>
+                        <input className="input-nook py-1" type="number" placeholder="耐用月數 (24)" value={newAsset.lifespanMonths} onChange={e => setNewAsset({...newAsset, lifespanMonths: parseInt(e.target.value)})} />
                      </div>
+                     <input className="input-nook py-1" placeholder="備註..." value={newAsset.note} onChange={e => setNewAsset({...newAsset, note: e.target.value})} />
                      <button onClick={handleAddAsset} className="w-full bg-[#78b833] text-white py-2 rounded-xl font-bold">儲存資產</button>
                   </div>
                 )}
@@ -242,8 +287,9 @@ const CostAnalysisModule: React.FC<CostAnalysisModuleProps> = ({ onClose }) => {
                      <table className="w-full text-left">
                         <thead className="bg-slate-50">
                            <tr>
-                              <th className="p-3 text-xs font-black text-slate-400">名稱</th>
-                              <th className="p-3 text-xs font-black text-slate-400">購入日</th>
+                              <th className="p-3 text-xs font-black text-slate-400">類別 / 名稱</th>
+                              <th className="p-3 text-xs font-black text-slate-400">備註</th>
+                              <th className="p-3 text-xs font-black text-slate-400 text-right">數量</th>
                               <th className="p-3 text-xs font-black text-slate-400 text-right">成本</th>
                               <th className="p-3 text-xs font-black text-slate-400 text-right">月折舊</th>
                               <th className="p-3"></th>
@@ -252,8 +298,12 @@ const CostAnalysisModule: React.FC<CostAnalysisModuleProps> = ({ onClose }) => {
                         <tbody className="divide-y divide-slate-100">
                            {assets.map(a => (
                              <tr key={a.id}>
-                                <td className="p-3 font-bold text-[#5d4a36]">{a.name}</td>
-                                <td className="p-3 text-sm text-slate-500">{a.purchaseDate}</td>
+                                <td className="p-3">
+                                   <div className="text-[10px] text-slate-400 font-bold">{a.category || '未分類'}</div>
+                                   <div className="font-bold text-[#5d4a36] text-sm">{a.name}</div>
+                                </td>
+                                <td className="p-3 text-xs text-slate-500 max-w-[200px] truncate">{a.note || '-'}</td>
+                                <td className="p-3 text-sm font-bold text-right">{a.qty || 1} {a.unit || '個'}</td>
                                 <td className="p-3 text-sm font-mono text-right">${a.cost.toLocaleString()}</td>
                                 <td className="p-3 text-sm font-mono text-right text-red-400">${Math.round(a.cost / a.lifespanMonths).toLocaleString()}</td>
                                 <td className="p-3 text-right">

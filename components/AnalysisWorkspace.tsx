@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { db } from '../services/db';
 import { L2Engine, L2JobAnalysis } from '../services/l2Engine';
@@ -6,10 +7,10 @@ import { auth } from '../services/auth';
 import ConfirmDialog from './ConfirmDialog';
 import { 
   PieChart, Truck, Package, TrendingUp, Download, 
-  Calendar, ArrowRight, Eye, EyeOff, Plus, Trash2, RefreshCw
+  Calendar, ArrowRight, Eye, EyeOff, Plus, Trash2, RefreshCw, HardHat, AlertCircle
 } from 'lucide-react';
 
-type Tab = 'dashboard' | 'assets' | 'stock';
+type Tab = 'dashboard' | 'assets' | 'stock' | 'labor';
 
 const DEFAULT_LABOR: L2LaborConfig = {
   bossSalary: 30000,
@@ -122,7 +123,8 @@ const AnalysisWorkspace: React.FC = () => {
   const tabs = [
     { id: 'dashboard', icon: TrendingUp, label: '損益分析總覽', mobileLabel: '損益' },
     { id: 'assets', icon: Truck, label: '設備資產清冊', mobileLabel: '設備' },
-    { id: 'stock', icon: Package, label: '耗材進貨登記', mobileLabel: '耗材' }
+    { id: 'stock', icon: Package, label: '耗材進貨登記', mobileLabel: '耗材' },
+    { id: 'labor', icon: HardHat, label: '人力設定', mobileLabel: '人力' }
   ];
 
   return (
@@ -340,6 +342,55 @@ const AnalysisWorkspace: React.FC = () => {
                          ))}
                       </tbody>
                    </table>
+                </div>
+             </div>
+          )}
+
+          {activeTab === 'labor' && (
+             <div className="max-w-xl mx-auto space-y-6 animate-in fade-in">
+                <div className="bg-white p-8 rounded-[2rem] border-2 border-[#e8dcb9] shadow-sm">
+                   <h3 className="font-black text-xl text-[#5d4a36] mb-6 flex items-center gap-2"><HardHat className="text-orange-500"/> 固定人力成本</h3>
+                   
+                   <div className="space-y-4">
+                      <div>
+                         <label className="text-xs font-bold text-slate-400 mb-1 block">老闆月薪</label>
+                         <input type="number" className="input-nook py-3 text-lg" value={l2Labor.bossSalary} onChange={e => {
+                            const val = parseInt(e.target.value) || 0;
+                            const newCfg = { ...l2Labor, bossSalary: val };
+                            setL2Labor(newCfg);
+                            db.l2.labor.save(newCfg);
+                         }} />
+                      </div>
+                      <div>
+                         <label className="text-xs font-bold text-slate-400 mb-1 block">闆娘月薪</label>
+                         <input type="number" className="input-nook py-3 text-lg" value={l2Labor.partnerSalary} onChange={e => {
+                            const val = parseInt(e.target.value) || 0;
+                            const newCfg = { ...l2Labor, partnerSalary: val };
+                            setL2Labor(newCfg);
+                            db.l2.labor.save(newCfg);
+                         }} />
+                      </div>
+                      <div>
+                         <label className="text-xs font-bold text-slate-400 mb-1 block">勞健保總負擔</label>
+                         <input type="number" className="input-nook py-3 text-lg" value={l2Labor.insuranceCost} onChange={e => {
+                            const val = parseInt(e.target.value) || 0;
+                            const newCfg = { ...l2Labor, insuranceCost: val };
+                            setL2Labor(newCfg);
+                            db.l2.labor.save(newCfg);
+                         }} />
+                      </div>
+                   </div>
+
+                   <div className="mt-8 pt-6 border-t border-slate-100">
+                      <div className="flex justify-between items-center">
+                         <span className="font-black text-slate-400">每月總固定支出</span>
+                         <span className="text-3xl font-black text-[#5d4a36]">${(l2Labor.bossSalary + l2Labor.partnerSalary + l2Labor.insuranceCost).toLocaleString()}</span>
+                      </div>
+                      <div className="bg-orange-50 p-3 rounded-xl mt-4 text-xs font-bold text-orange-600 flex items-start gap-2">
+                         <AlertCircle size={16} className="shrink-0 mt-0.5"/>
+                         <div>此金額將除以「當月總工時」，算出每小時的人力成本率，再依據每張工單的工時進行攤提。</div>
+                      </div>
+                   </div>
                 </div>
              </div>
           )}
