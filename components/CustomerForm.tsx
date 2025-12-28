@@ -42,7 +42,11 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ initialData, onCancel, onSa
   const [allCustomers, setAllCustomers] = React.useState<Customer[]>([]);
 
   React.useEffect(() => {
-    setAllCustomers(db.customers.getAll());
+    const loadCustomers = async () => {
+      const data = await db.customers.getAll();
+      setAllCustomers(data);
+    };
+    loadCustomers();
   }, []);
 
   // --- Helpers ---

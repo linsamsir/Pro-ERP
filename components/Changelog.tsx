@@ -31,7 +31,8 @@ const Changelog: React.FC = () => {
       res = res.filter(l => 
         l.summary.toLowerCase().includes(lower) || 
         l.actor.name.toLowerCase().includes(lower) ||
-        l.target.entityName?.toLowerCase().includes(lower)
+        l.target.entityName?.toLowerCase().includes(lower) ||
+        (l.target.entityId && l.target.entityId.toLowerCase().includes(lower))
       );
     }
     if (moduleFilter !== 'ALL') {
@@ -41,9 +42,9 @@ const Changelog: React.FC = () => {
   }, [searchTerm, moduleFilter, logs]);
 
   const exportCSV = () => {
-    const header = "Time,Actor,Role,Module,Action,Target,Summary\n";
+    const header = "Time,Actor,Role,Module,Action,TargetID,TargetName,Summary\n";
     const rows = filteredLogs.map(l => 
-      `${l.createdAt},${l.actor.name},${l.actor.role},${l.module},${l.action},${l.target.entityName || l.target.entityId},"${l.summary}"`
+      `${l.createdAt},${l.actor.name},${l.actor.role},${l.module},${l.action},${l.target.entityId},${l.target.entityName},"${l.summary}"`
     ).join("\n");
     
     const blob = new Blob(['\uFEFF' + header + rows], { type: 'text/csv;charset=utf-8;' });
@@ -57,16 +58,23 @@ const Changelog: React.FC = () => {
   };
 
   const renderDiff = (diff: any) => {
-    if (!diff) return null;
+    if (!diff) return <div className="text-xs text-slate-400 italic">No detailed changes recorded.</div>;
     return (
-      <div className="grid grid-cols-2 gap-4 text-xs font-mono bg-slate-800 text-green-400 p-4 rounded-xl mt-2 overflow-x-auto">
-        <div className="border-r border-slate-600 pr-2">
-          <div className="text-slate-500 mb-1 font-bold">BEFORE</div>
-          <pre>{JSON.stringify(diff.before, null, 2) || '-'}</pre>
-        </div>
-        <div className="pl-2">
-          <div className="text-slate-500 mb-1 font-bold">AFTER</div>
-          <pre>{JSON.stringify(diff.after, null, 2) || '-'}</pre>
+      <div className="mt-2 bg-slate-900 rounded-xl p-4 overflow-x-auto border border-slate-700">
+        <div className="flex gap-4 min-w-max">
+          <div className="flex-1 min-w-[300px]">
+            <div className="text-red-400 font-bold mb-2 text-xs uppercase tracking-wider border-b border-red-900/50 pb-1">Before</div>
+            <pre className="text-xs text-red-200 font-mono leading-relaxed whitespace-pre-wrap">
+              {diff.before ? JSON.stringify(diff.before, null, 2) : 'null'}
+            </pre>
+          </div>
+          <div className="w-px bg-slate-700"></div>
+          <div className="flex-1 min-w-[300px]">
+             <div className="text-green-400 font-bold mb-2 text-xs uppercase tracking-wider border-b border-green-900/50 pb-1">After</div>
+             <pre className="text-xs text-green-200 font-mono leading-relaxed whitespace-pre-wrap">
+               {diff.after ? JSON.stringify(diff.after, null, 2) : 'null'}
+             </pre>
+          </div>
         </div>
       </div>
     );
@@ -78,6 +86,7 @@ const Changelog: React.FC = () => {
       case 'UPDATE': return 'text-blue-600 bg-blue-50 border-blue-200';
       case 'DELETE': return 'text-red-600 bg-red-50 border-red-200';
       case 'LOGIN': return 'text-purple-600 bg-purple-50 border-purple-200';
+      case 'LOGOUT': return 'text-slate-600 bg-slate-100 border-slate-200';
       default: return 'text-slate-600 bg-slate-50 border-slate-200';
     }
   };
@@ -87,13 +96,13 @@ const Changelog: React.FC = () => {
   }
 
   return (
-    <div className="max-w-5xl mx-auto pb-20 space-y-6 animate-pop">
+    <div className="max-w-6xl mx-auto pb-20 space-y-6 animate-pop">
       <div className="flex flex-col md:flex-row justify-between items-end gap-4">
         <div>
           <h2 className="text-h1 flex items-center gap-3">
             <Activity className="text-[#78b833]" size={32}/> 系統變更紀錄
           </h2>
-          <p className="text-note font-bold mt-1 ml-1">追溯所有操作歷史 (Audit Log)</p>
+          <p className="text-note font-bold mt-1 ml-1">Audit Trail & Security Logs</p>
         </div>
         {auth.isAdmin() && (
           <button onClick={exportCSV} className="bg-white border-2 border-[#e8dcb9] text-[#5d4a36] px-4 py-2 rounded-xl font-bold flex items-center gap-2 hover:bg-[#fffdf5]">
@@ -108,7 +117,7 @@ const Changelog: React.FC = () => {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" size={20} />
           <input 
             className="input-nook pl-10 py-2 text-sm" 
-            placeholder="搜尋摘要、操作者、目標..."
+            placeholder="搜尋摘要、操作者、目標 ID..."
             value={searchTerm}
             onChange={e => setSearchTerm(e.target.value)}
           />
@@ -129,7 +138,7 @@ const Changelog: React.FC = () => {
       {/* Log List */}
       <div className="bg-white rounded-[2rem] border-2 border-[#e8dcb9] overflow-hidden shadow-sm min-h-[500px]">
         {filteredLogs.length === 0 ? (
-          <div className="p-20 text-center text-slate-300 font-bold">尚無紀錄</div>
+          <div className="p-20 text-center text-slate-300 font-bold">查無紀錄</div>
         ) : (
           <div className="divide-y divide-slate-100">
             {filteredLogs.map(log => (
@@ -147,7 +156,7 @@ const Changelog: React.FC = () => {
                       <span className={`text-[10px] px-2 py-0.5 rounded border font-black ${getActionColor(log.action)}`}>
                         {log.action}
                       </span>
-                      <span className="text-xs font-bold text-slate-400">{new Date(log.createdAt).toLocaleString()}</span>
+                      <span className="text-xs font-bold text-slate-400 font-mono">{new Date(log.createdAt).toLocaleString()}</span>
                       <span className="text-xs font-bold text-[#5d4a36] bg-slate-100 px-2 py-0.5 rounded">
                         {log.actor.name} ({log.actor.role})
                       </span>
@@ -157,12 +166,12 @@ const Changelog: React.FC = () => {
                 </div>
                 
                 {expandedId === log.id && (
-                  <div className="px-16 pb-6 bg-[#fbf8e6] animate-in fade-in slide-in-from-top-2">
-                    <div className="grid grid-cols-2 gap-4 mb-4 text-xs text-slate-500">
-                       <div>ID: {log.id}</div>
-                       <div>Target: {log.target.entityType} ({log.target.entityId})</div>
+                  <div className="px-4 md:px-16 pb-6 bg-[#fbf8e6] animate-in fade-in slide-in-from-top-2">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-4 text-xs text-slate-500 font-mono pt-2">
+                       <div>Log ID: {log.id}</div>
+                       <div>Target: {log.target.entityType} / {log.target.entityId}</div>
                     </div>
-                    {log.diff && renderDiff(log.diff)}
+                    {renderDiff(log.diff)}
                   </div>
                 )}
               </div>

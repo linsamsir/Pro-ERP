@@ -1,8 +1,9 @@
 
-import { Customer, Job, JobStatus, Expense, AppSettings, L2Asset, L2StockLog, L2LaborConfig, User, AuditLog, UserRole } from '../types';
+import { Customer, Job, JobStatus, Expense, AppSettings, L2Asset, L2StockLog, L2LaborConfig, AuditLog } from '../types';
 import { db as firestore } from './firebase';
 import { auth } from './auth';
-import { collection, doc, getDocs, getDoc, setDoc, addDoc, updateDoc, deleteDoc, query, where, orderBy, limit, Timestamp } from "firebase/firestore";
+import { AuditService } from './audit';
+import { collection, doc, getDocs, getDoc, setDoc, updateDoc, query, where, orderBy, limit } from "firebase/firestore";
 import { extractAiTags, getAiCooldownSeconds } from './gemini';
 
 // Collection Names
@@ -10,18 +11,18 @@ const COLL = {
   CUSTOMERS: 'customers',
   JOBS: 'jobs',
   EXPENSES: 'expenses',
-  SETTINGS: 'settings', // Doc ID: 'global'
+  SETTINGS: 'settings',
   L2_ASSETS: 'l2_assets',
   L2_STOCK: 'l2_stock',
   AUDIT: 'audit_logs'
 };
 
-// --- Helper: Deep Masking for Staff ---
+// Helper: Deep Masking for Staff View
 const deepMask = (obj: any): any => {
   if (!obj) return obj;
   const user = auth.getCurrentUser();
   if (!user || user.role === 'BOSS' || user.role === 'MANAGER') return obj;
-  if (user.role === 'DECOY') return {}; // Decoy sees nothing
+  if (user.role === 'DECOY') return {};
 
   const sensitiveKeys = ['amount', 'total_amount', 'totalPaid', 'cost', 'revenue', 'netProfit', 'salary', 'bossSalary', 'partnerSalary', 'insuranceCost'];
   
@@ -29,8 +30,7 @@ const deepMask = (obj: any): any => {
   
   for (const key in masked) {
     if (sensitiveKeys.some(k => key.toLowerCase().includes(k.toLowerCase()))) {
-      masked[key] = -1; // Number mask
-      if (typeof obj[key] === 'string') masked[key] = '****';
+      masked[key] = typeof obj[key] === 'number' ? -1 : '****';
     } else if (typeof masked[key] === 'object' && masked[key] !== null) {
       masked[key] = deepMask(masked[key]);
     }
@@ -38,79 +38,45 @@ const deepMask = (obj: any): any => {
   return masked;
 };
 
-// --- Helper: Audit Logging ---
-const logChange = async (
-  module: AuditLog['module'],
-  action: AuditLog['action'],
-  target: AuditLog['target'],
-  summary: string,
-  diff?: AuditLog['diff']
-) => {
-  const actor = auth.getCurrentUser();
-  if (!actor) return;
-
-  try {
-    await addDoc(collection(firestore, COLL.AUDIT), {
-      createdAt: new Date().toISOString(),
-      actor: { userId: actor.id, name: actor.name, role: actor.role },
-      module,
-      action,
-      target,
-      summary,
-      diff: diff || null
-    });
-  } catch (e) {
-    console.error("Audit Log Failed:", e);
-  }
-};
-
-// --- Helper: Diff Calculator ---
-const calculateDiff = (before: any, after: any) => {
-  const diff: any = { before: {}, after: {} };
-  const allKeys = new Set([...Object.keys(before || {}), ...Object.keys(after || {})]);
-  
-  allKeys.forEach(key => {
-    if (JSON.stringify(before?.[key]) !== JSON.stringify(after?.[key])) {
-      diff.before[key] = before?.[key];
-      diff.after[key] = after?.[key];
-    }
-  });
-  return diff;
+// Helper: Calculate Object Diff
+const getDiff = (before: any, after: any) => {
+  // Simple diff logic
+  return { before, after };
 };
 
 export const db = {
-  users: { init: () => {} }, // Deprecated
-  
   audit: {
     getAll: async () => {
-      const user = auth.getCurrentUser();
-      if (user?.role === 'DECOY') return [];
-      
-      const q = query(collection(firestore, COLL.AUDIT), orderBy('createdAt', 'desc'), limit(100));
+      // Everyone can read audit logs (masked if staff)
+      const q = query(collection(firestore, COLL.AUDIT), orderBy('ts', 'desc'), limit(50));
       const snap = await getDocs(q);
-      const logs = snap.docs.map(d => ({ id: d.id, ...d.data() } as AuditLog));
+      const logs = snap.docs.map(d => {
+        const data = d.data();
+        // Convert timestamp to string for UI
+        return { 
+          id: d.id, 
+          ...data, 
+          createdAt: data.createdAt || (data.ts ? new Date(data.ts.seconds * 1000).toISOString() : '') 
+        } as AuditLog;
+      });
+      
+      const user = auth.getCurrentUser();
+      // Mask audit details for staff? Maybe not strict requirement, but let's be safe
       return user?.role === 'STAFF' ? deepMask(logs) : logs;
     }
   },
 
   customers: {
     getAll: async () => {
-      const user = auth.getCurrentUser();
-      if (user?.role === 'DECOY') return [];
-
       const q = query(collection(firestore, COLL.CUSTOMERS), where('deleted_at', '==', null));
       const snap = await getDocs(q);
       const list = snap.docs.map(d => d.data() as Customer);
-      return user?.role === 'STAFF' ? list.map(c => deepMask(c)) : list;
+      return list.map(c => deepMask(c));
     },
     get: async (id: string) => {
-      const user = auth.getCurrentUser();
-      if (user?.role === 'DECOY') return undefined;
-
       const snap = await getDoc(doc(firestore, COLL.CUSTOMERS, id));
       if (!snap.exists()) return undefined;
-      const data = snap.data() as Customer;
-      return user?.role === 'STAFF' ? deepMask(data) : data;
+      return deepMask(snap.data() as Customer);
     },
     delete: async (id: string) => {
       if (!auth.canWrite()) return;
@@ -119,7 +85,15 @@ export const db = {
       if (snap.exists()) {
         const before = snap.data();
         await updateDoc(ref, { deleted_at: new Date().toISOString() });
-        logChange('CUSTOMER', 'DELETE', { entityType: 'Customer', entityId: id, entityName: before.displayName }, `刪除村民: ${before.displayName}`, { before });
+        
+        await AuditService.log({
+          action: 'DELETE',
+          module: 'CUSTOMER',
+          entityId: id,
+          entityName: before.displayName,
+          summary: `刪除村民: ${before.displayName}`,
+          before
+        }, auth.getCurrentUser());
       }
     },
     save: async (customer: Customer) => {
@@ -135,41 +109,41 @@ export const db = {
       const dataToSave = { ...customer, displayName, updated_at: now };
       
       if (snap.exists()) {
+        // UPDATE
         const before = snap.data();
-        const diff = calculateDiff(before, dataToSave);
         await setDoc(ref, dataToSave, { merge: true });
-        logChange('CUSTOMER', 'UPDATE', { entityType: 'Customer', entityId: customer.customer_id, entityName: displayName }, `更新村民: ${displayName}`, diff);
+        await AuditService.log({
+          action: 'UPDATE',
+          module: 'CUSTOMER',
+          entityId: customer.customer_id,
+          entityName: displayName,
+          summary: `更新村民資料: ${displayName}`,
+          before,
+          after: dataToSave
+        }, auth.getCurrentUser());
       } else {
+        // CREATE
         dataToSave.created_at = now;
         await setDoc(ref, dataToSave);
-        logChange('CUSTOMER', 'CREATE', { entityType: 'Customer', entityId: customer.customer_id, entityName: displayName }, `新增村民: ${displayName}`, { after: dataToSave });
+        await AuditService.log({
+          action: 'CREATE',
+          module: 'CUSTOMER',
+          entityId: customer.customer_id,
+          entityName: displayName,
+          summary: `新增村民: ${displayName}`,
+          after: dataToSave
+        }, auth.getCurrentUser());
       }
     },
-    generateId: () => {
-      // Client-side gen for simplicity, but robust enough
-      return `C${Date.now().toString(36).toUpperCase()}`;
-    }
+    generateId: () => `C${Date.now().toString(36).toUpperCase()}`
   },
 
   jobs: {
     getAll: async () => {
-      const user = auth.getCurrentUser();
-      if (user?.role === 'DECOY') return [];
-
       const q = query(collection(firestore, COLL.JOBS), where('deletedAt', '==', null));
       const snap = await getDocs(q);
       const list = snap.docs.map(d => d.data() as Job);
-      return user?.role === 'STAFF' ? list.map(j => deepMask(j)) : list;
-    },
-    // New: Find jobs by Customer ID (for phone search linkage)
-    getByCustomerId: async (cid: string) => {
-      const user = auth.getCurrentUser();
-      if (user?.role === 'DECOY') return [];
-      
-      const q = query(collection(firestore, COLL.JOBS), where('customerId', '==', cid), where('deletedAt', '==', null));
-      const snap = await getDocs(q);
-      const list = snap.docs.map(d => d.data() as Job);
-      return user?.role === 'STAFF' ? list.map(j => deepMask(j)) : list;
+      return list.map(j => deepMask(j));
     },
     delete: async (id: string) => {
       if (!auth.canWrite()) return;
@@ -178,7 +152,14 @@ export const db = {
       if(snap.exists()) {
         const before = snap.data();
         await updateDoc(ref, { deletedAt: new Date().toISOString() });
-        logChange('JOB', 'DELETE', { entityType: 'Job', entityId: id, entityName: before.contactPerson }, `刪除工單`, { before });
+        await AuditService.log({
+          action: 'DELETE',
+          module: 'JOB',
+          entityId: id,
+          entityName: before.contactPerson,
+          summary: `刪除工單: ${before.serviceDate} ${before.contactPerson}`,
+          before
+        }, auth.getCurrentUser());
       }
     },
     save: async (job: Job, options: { skipAi?: boolean } = {}) => {
@@ -190,39 +171,55 @@ export const db = {
 
       if (snap.exists()) {
         const before = snap.data();
-        const diff = calculateDiff(before, jobToSave);
         await setDoc(ref, jobToSave, { merge: true });
-        logChange('JOB', 'UPDATE', { entityType: 'Job', entityId: job.jobId, entityName: job.contactPerson }, `更新工單`, diff);
+        await AuditService.log({
+          action: 'UPDATE',
+          module: 'JOB',
+          entityId: job.jobId,
+          entityName: `${job.serviceDate} ${job.contactPerson}`,
+          summary: `更新工單`,
+          before,
+          after: jobToSave
+        }, auth.getCurrentUser());
       } else {
         jobToSave.createdAt = now;
         await setDoc(ref, jobToSave);
-        logChange('JOB', 'CREATE', { entityType: 'Job', entityId: job.jobId, entityName: job.contactPerson }, `新增工單`, { after: jobToSave });
+        await AuditService.log({
+          action: 'CREATE',
+          module: 'JOB',
+          entityId: job.jobId,
+          entityName: `${job.serviceDate} ${job.contactPerson}`,
+          summary: `新增工單`,
+          after: jobToSave
+        }, auth.getCurrentUser());
       }
 
-      // Sync logic (update Customer)
+      // Sync logic (Auto-update Customer last service)
       if (job.status === JobStatus.COMPLETED) {
-        const custRef = doc(firestore, COLL.CUSTOMERS, job.customerId);
-        const custSnap = await getDoc(custRef);
-        if (custSnap.exists()) {
-          const custData = custSnap.data() as Customer;
-          
-          // AI Logic
-          let newTags = custData.ai_tags || [];
-          if (!options.skipAi && getAiCooldownSeconds() === 0 && job.serviceNote) {
-            try {
-              const generated = await extractAiTags(job.serviceNote);
-              newTags = Array.from(new Set([...newTags, ...generated])).slice(0, 10);
-            } catch (e) { console.warn("AI skipped", e); }
-          }
+        try {
+          const custRef = doc(firestore, COLL.CUSTOMERS, job.customerId);
+          const custSnap = await getDoc(custRef);
+          if (custSnap.exists()) {
+            const custData = custSnap.data() as Customer;
+            let newTags = custData.ai_tags || [];
+            
+            // AI Trigger
+            if (!options.skipAi && getAiCooldownSeconds() === 0 && job.serviceNote) {
+               try {
+                 const generated = await extractAiTags(job.serviceNote);
+                 newTags = Array.from(new Set([...newTags, ...generated])).slice(0, 10);
+               } catch(e) { console.warn("AI skipped", e); }
+            }
 
-          await updateDoc(custRef, {
-            is_returning: true, // Simplified: if completed job > 0, assume returning or check count
-            last_service_date: job.serviceDate,
-            last_service_summary: job.serviceItems.join(', '),
-            ai_tags: newTags,
-            updated_at: now
-          });
-        }
+            await updateDoc(custRef, {
+              is_returning: true,
+              last_service_date: job.serviceDate,
+              last_service_summary: job.serviceItems.join(', '),
+              ai_tags: newTags,
+              updated_at: now
+            });
+          }
+        } catch (e) { console.error("Sync customer failed", e); }
       }
       return jobToSave;
     },
@@ -231,29 +228,52 @@ export const db = {
 
   expenses: {
     getAll: async () => {
-      const user = auth.getCurrentUser();
-      if (user?.role === 'DECOY') return [];
       const q = query(collection(firestore, COLL.EXPENSES), where('deletedAt', '==', null));
       const snap = await getDocs(q);
       const list = snap.docs.map(d => d.data() as Expense);
-      return user?.role === 'STAFF' ? list.map(e => deepMask(e)) : list;
+      return list.map(e => deepMask(e));
     },
     save: async (expense: Expense) => {
       if (!auth.canWrite()) return;
       const ref = doc(firestore, COLL.EXPENSES, expense.id);
       const snap = await getDoc(ref);
+      
       if (snap.exists()) {
+        const before = snap.data();
         await setDoc(ref, expense, { merge: true });
+        await AuditService.log({
+          action: 'UPDATE',
+          module: 'EXPENSE',
+          entityId: expense.id,
+          summary: `更新支出: ${expense.amount}`,
+          before, after: expense
+        }, auth.getCurrentUser());
       } else {
         await setDoc(ref, expense);
+        await AuditService.log({
+          action: 'CREATE',
+          module: 'EXPENSE',
+          entityId: expense.id,
+          summary: `新增支出: ${expense.category} $${expense.amount}`,
+          after: expense
+        }, auth.getCurrentUser());
       }
-      logChange('EXPENSE', snap.exists() ? 'UPDATE' : 'CREATE', { entityType: 'Expense', entityId: expense.id }, `支出紀錄`);
     },
     delete: async (id: string) => {
       if (!auth.canWrite()) return;
       const ref = doc(firestore, COLL.EXPENSES, id);
-      await updateDoc(ref, { deletedAt: new Date().toISOString() });
-      logChange('EXPENSE', 'DELETE', { entityType: 'Expense', entityId: id }, `刪除支出`);
+      const snap = await getDoc(ref);
+      if(snap.exists()) {
+        const before = snap.data();
+        await updateDoc(ref, { deletedAt: new Date().toISOString() });
+        await AuditService.log({
+          action: 'DELETE',
+          module: 'EXPENSE',
+          entityId: id,
+          summary: `刪除支出`,
+          before
+        }, auth.getCurrentUser());
+      }
     },
     generateId: () => `EXP-${Date.now()}`
   },
@@ -270,9 +290,7 @@ export const db = {
       };
       if (snap.exists()) {
         const data = snap.data() as AppSettings;
-        // Staff masking
-        const user = auth.getCurrentUser();
-        return user?.role === 'STAFF' ? deepMask(data) : { ...def, ...data };
+        return deepMask({ ...def, ...data });
       }
       return def;
     },
@@ -281,9 +299,15 @@ export const db = {
       const ref = doc(firestore, COLL.SETTINGS, 'global');
       const snap = await getDoc(ref);
       const before = snap.exists() ? snap.data() : null;
+      
       await setDoc(ref, settings, { merge: true });
-      const diff = calculateDiff(before, settings);
-      logChange('SETTINGS', 'UPDATE', { entityType: 'Settings', entityId: 'global' }, '更新系統參數', diff);
+      await AuditService.log({
+        action: 'UPDATE',
+        module: 'SETTINGS',
+        entityId: 'global',
+        summary: '更新系統參數',
+        before, after: settings
+      }, auth.getCurrentUser());
     }
   },
 
@@ -293,19 +317,33 @@ export const db = {
         const q = query(collection(firestore, COLL.L2_ASSETS), where('deletedAt', '==', null));
         const snap = await getDocs(q);
         const list = snap.docs.map(d => d.data() as L2Asset);
-        const user = auth.getCurrentUser();
-        return user?.role === 'STAFF' ? list.map(i => deepMask(i)) : list;
+        return list.map(i => deepMask(i));
       },
       save: async (item: L2Asset) => {
         if (!auth.canWrite()) return;
         const ref = doc(firestore, COLL.L2_ASSETS, item.id);
+        const snap = await getDoc(ref);
+        const before = snap.exists() ? snap.data() : null;
+        
         await setDoc(ref, item, { merge: true });
-        logChange('SETTINGS', 'UPDATE', { entityType: 'Asset', entityId: item.id }, `資產: ${item.name}`);
+        await AuditService.log({
+          action: snap.exists() ? 'UPDATE' : 'CREATE',
+          module: 'SETTINGS',
+          entityId: item.id,
+          summary: `資產: ${item.name}`,
+          before, after: item
+        }, auth.getCurrentUser());
       },
       delete: async (id: string) => {
         if (!auth.canWrite()) return;
         const ref = doc(firestore, COLL.L2_ASSETS, id);
         await updateDoc(ref, { deletedAt: new Date().toISOString() });
+        await AuditService.log({
+            action: 'DELETE',
+            module: 'SETTINGS',
+            entityId: id,
+            summary: `刪除資產`
+        }, auth.getCurrentUser());
       },
       generateId: () => `L2A-${Date.now()}`
     },
@@ -314,19 +352,33 @@ export const db = {
         const q = query(collection(firestore, COLL.L2_STOCK), where('deletedAt', '==', null));
         const snap = await getDocs(q);
         const list = snap.docs.map(d => d.data() as L2StockLog);
-        const user = auth.getCurrentUser();
-        return user?.role === 'STAFF' ? list.map(i => deepMask(i)) : list;
+        return list.map(i => deepMask(i));
       },
       save: async (item: L2StockLog) => {
         if (!auth.canWrite()) return;
         const ref = doc(firestore, COLL.L2_STOCK, item.id);
+        const snap = await getDoc(ref);
+        const before = snap.exists() ? snap.data() : null;
+
         await setDoc(ref, item, { merge: true });
-        logChange('SETTINGS', 'UPDATE', { entityType: 'Stock', entityId: item.id }, `庫存進貨`);
+        await AuditService.log({
+          action: snap.exists() ? 'UPDATE' : 'CREATE',
+          module: 'SETTINGS',
+          entityId: item.id,
+          summary: `庫存進貨: ${item.itemType}`,
+          before, after: item
+        }, auth.getCurrentUser());
       },
       delete: async (id: string) => {
         if (!auth.canWrite()) return;
         const ref = doc(firestore, COLL.L2_STOCK, id);
         await updateDoc(ref, { deletedAt: new Date().toISOString() });
+        await AuditService.log({
+            action: 'DELETE',
+            module: 'SETTINGS',
+            entityId: id,
+            summary: `刪除庫存紀錄`
+        }, auth.getCurrentUser());
       },
       generateId: () => `L2S-${Date.now()}`
     },
@@ -336,17 +388,24 @@ export const db = {
         const snap = await getDoc(ref);
         const def = { bossSalary: 40000, partnerSalary: 35000, insuranceCost: 12000 };
         if (snap.exists()) {
-           const data = snap.data() as L2LaborConfig;
-           const user = auth.getCurrentUser();
-           return user?.role === 'STAFF' ? deepMask(data) : { ...def, ...data };
+           return deepMask({ ...def, ...snap.data() });
         }
         return def;
       },
       save: async (cfg: L2LaborConfig) => {
         if (!auth.canWrite()) return;
         const ref = doc(firestore, COLL.SETTINGS, 'l2_labor');
+        const snap = await getDoc(ref);
+        const before = snap.exists() ? snap.data() : null;
+        
         await setDoc(ref, cfg, { merge: true });
-        logChange('SETTINGS', 'UPDATE', { entityType: 'LaborConfig', entityId: 'L2' }, '更新人力成本參數');
+        await AuditService.log({
+          action: 'UPDATE',
+          module: 'SETTINGS',
+          entityId: 'L2_LABOR',
+          summary: '更新人力成本參數',
+          before, after: cfg
+        }, auth.getCurrentUser());
       }
     }
   }

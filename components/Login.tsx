@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { auth } from '../services/auth';
 import { Tent, ArrowRight, Lock, User } from 'lucide-react';
@@ -17,7 +18,7 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
     setLoading(true);
     setError('');
 
-    // Simulate network delay for better UX feel
+    // Simulate network delay for UX
     setTimeout(async () => {
       const result = await auth.login(username, password);
       if (result.success) {
@@ -89,7 +90,7 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
         </form>
 
         <div className="mt-8 text-center">
-          <p className="text-xs text-slate-300 font-bold">Secure Access Level 0</p>
+          <p className="text-xs text-slate-300 font-bold">Security Level 0: Audit Logging Enabled</p>
         </div>
       </div>
     </div>
