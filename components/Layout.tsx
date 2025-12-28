@@ -1,8 +1,9 @@
 
 import React from 'react';
-import { Home, Users, ClipboardList, Menu, Tent, Crown, PieChart, Activity, LogOut, User as UserIcon } from 'lucide-react';
+import { Home, Users, ClipboardList, Menu, Tent, Crown, PieChart, Activity, LogOut, User as UserIcon, Bug } from 'lucide-react';
 import { auth } from '../services/auth';
 import ConfirmDialog from './ConfirmDialog';
+import DebugPanel from './DebugPanel';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -13,6 +14,7 @@ interface LayoutProps {
 const Layout: React.FC<LayoutProps> = ({ children, activeView, onNavigate }) => {
   const [menuOpen, setMenuOpen] = React.useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = React.useState(false);
+  const [showDebug, setShowDebug] = React.useState(false);
   const user = auth.getCurrentUser();
 
   const navItems = [
@@ -34,7 +36,6 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onNavigate }) => 
 
   const handleLogout = async () => {
     await auth.logout();
-    // Redirect handled by auth.logout (window.location)
     setShowLogoutConfirm(false);
   };
 
@@ -49,6 +50,8 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onNavigate }) => 
         onConfirm={handleLogout}
         onCancel={() => setShowLogoutConfirm(false)}
       />
+
+      {showDebug && <DebugPanel onClose={() => setShowDebug(false)} />}
 
       {/* Mobile Header */}
       <div className="md:hidden bg-[#78b833] text-white p-4 flex justify-between items-center z-50 sticky top-0 border-b-4 border-[#5a8d26]">
@@ -96,7 +99,13 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onNavigate }) => 
             ))}
           </nav>
 
-          <div className="mt-auto pt-6 border-t-2 border-[#e6e0c6]">
+          <div className="mt-auto pt-6 border-t-2 border-[#e6e0c6] space-y-2">
+            <button 
+              onClick={() => setShowDebug(true)}
+              className="w-full flex items-center justify-center gap-2 text-slate-400 hover:text-[#5d4a36] font-bold py-2 text-xs"
+            >
+              <Bug size={14}/> 系統診斷
+            </button>
             <button 
               onClick={() => setShowLogoutConfirm(true)}
               className="w-full flex items-center justify-center gap-2 text-[#b59a7a] hover:text-red-400 font-bold py-2 transition-colors"

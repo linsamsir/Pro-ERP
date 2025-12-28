@@ -1,10 +1,10 @@
 
 import React from 'react';
-import { Job, JobStatus, AvatarType, ServiceItem, Customer } from '../types';
+import { Job, JobStatus, AvatarType, ServiceItem } from '../types';
 import { db } from '../services/db';
 import { auth } from '../services/auth';
 import ConfirmDialog from './ConfirmDialog';
-import { Plus, Search, Calendar, User, Clock, Edit3, Trash2, DollarSign, FileText, ChevronRight, Droplets, Wrench, Lock, Loader2 } from 'lucide-react';
+import { Plus, Search, FileText, Lock, Loader2, Trash2, Droplets, Wrench, AlertTriangle } from 'lucide-react';
 
 interface JobListProps {
   onAdd: () => void;
@@ -14,26 +14,30 @@ interface JobListProps {
 
 const JobList: React.FC<JobListProps> = ({ onAdd, onEdit, onView }) => {
   const [jobs, setJobs] = React.useState<Job[]>([]);
-  const [customers, setCustomers] = React.useState<Customer[]>([]);
   const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
   const [searchTerm, setSearchTerm] = React.useState('');
   const [deleteId, setDeleteId] = React.useState<string | null>(null);
   const canWrite = auth.canWrite();
 
   const fetchData = async () => {
     setLoading(true);
-    const [jData, cData] = await Promise.all([
-      db.jobs.getAll(),
-      db.customers.getAll()
-    ]);
-    setJobs(jData);
-    setCustomers(cData);
-    setLoading(false);
+    setError(null);
+    try {
+      const jData = await db.jobs.list({ q: searchTerm });
+      setJobs(jData);
+    } catch (err: any) {
+      console.error("Failed to fetch jobs", err);
+      setError(err.message || "讀取任務失敗");
+    } finally {
+      setLoading(false);
+    }
   };
 
   React.useEffect(() => {
-    fetchData();
-  }, []);
+    const timer = setTimeout(fetchData, 500);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
 
   const handleDelete = async () => {
     if (deleteId) {
@@ -43,78 +47,9 @@ const JobList: React.FC<JobListProps> = ({ onAdd, onEdit, onView }) => {
     }
   };
 
-  // Improved Search Logic: Pre-calculate customer map for fast lookups
-  const filtered = React.useMemo(() => {
-    const term = searchTerm.toLowerCase();
-    
-    return jobs.filter(j => {
-      const cust = customers.find(c => c.customer_id === j.customerId);
-      
-      // Check Job ID
-      if (j.jobId.toLowerCase().includes(term)) return true;
-      
-      // Check Customer Name
-      if (cust?.displayName.toLowerCase().includes(term)) return true;
-      
-      // Check Contact Person
-      if (j.contactPerson?.toLowerCase().includes(term)) return true;
-
-      // Check Customer Phone (Crucial Fix)
-      if (cust?.phones.some(p => p.number.includes(term))) return true;
-      
-      // Check Job Contact Phone
-      if (j.contactPhone?.includes(term)) return true;
-
-      return false;
-    }).sort((a, b) => new Date(b.serviceDate).getTime() - new Date(a.serviceDate).getTime());
-  }, [jobs, customers, searchTerm]);
-
-  // Helpers
-  const getAvatarInfo = (type: AvatarType) => {
-    switch (type) {
-      case 'grandpa': return { icon: '👴', color: 'bg-stone-100' };
-      case 'grandma': return { icon: '👵', color: 'bg-orange-100' };
-      case 'man': return { icon: '👨', color: 'bg-blue-100' };
-      case 'woman': return { icon: '👩', color: 'bg-pink-100' };
-      case 'boy': return { icon: '👦', color: 'bg-green-100' };
-      case 'girl': return { icon: '👧', color: 'bg-yellow-100' };
-      case 'building': return { icon: '🏢', color: 'bg-slate-200' };
-      case 'factory': return { icon: '🏭', color: 'bg-slate-300' };
-      case 'angel': return { icon: '😇', color: 'bg-amber-100 ring-2 ring-yellow-400' };
-      case 'devil': return { icon: '😈', color: 'bg-purple-100 ring-2 ring-purple-400' };
-      default: return { icon: '👨', color: 'bg-blue-100' };
-    }
-  };
-
-  const renderAvatar = (cid: string) => {
-    const c = customers.find(x => x.customer_id === cid);
-    let emoji = '👨';
-    let color = 'bg-slate-200';
-    if (c?.avatar) {
-        if ((c.avatar as string).includes('|')) {
-            const parts = (c.avatar as string).split('|');
-            emoji = parts[0];
-            color = parts[1];
-        } else {
-            const info = getAvatarInfo(c.avatar);
-            emoji = info.icon;
-            color = info.color;
-        }
-    }
-    return (
-      <div className={`w-12 h-12 rounded-xl border-2 border-[#eeeada] flex items-center justify-center text-xl shadow-sm relative ${color}`}>
-        {emoji}
-      </div>
-    );
-  };
-
   const getTotalAmount = (job: Job) => {
     const val = job.financial?.total_amount ?? job.totalPaid ?? 0;
     return auth.maskSensitiveData(val.toLocaleString(), 'money');
-  };
-
-  const getCombinedTags = (job: Job) => {
-    return [...(job.subjective_tags || []), ...(job.tankConditionTags || [])].slice(0, 3);
   };
 
   return (
@@ -122,7 +57,7 @@ const JobList: React.FC<JobListProps> = ({ onAdd, onEdit, onView }) => {
       <ConfirmDialog 
         isOpen={!!deleteId}
         title="刪除任務紀錄？"
-        message="這筆完工紀錄將被刪除，但仍可在變更紀錄中檢視。"
+        message="這筆完工紀錄將被刪除。"
         isDanger
         confirmText="確認刪除"
         onConfirm={handleDelete}
@@ -134,7 +69,7 @@ const JobList: React.FC<JobListProps> = ({ onAdd, onEdit, onView }) => {
           <FileText className="text-[#78b833]" size={32} /> 村莊任務
         </h2>
         {canWrite ? (
-          <button onClick={onAdd} className="ac-btn-green px-8 py-3 flex items-center gap-2 font-black shadow-xl scale-105 active:scale-95 transition-transform">
+          <button onClick={onAdd} className="ac-btn-green px-8 py-3 flex items-center gap-2 font-black shadow-xl">
             <Plus size={24} /> 快速回報
           </button>
         ) : (
@@ -155,90 +90,83 @@ const JobList: React.FC<JobListProps> = ({ onAdd, onEdit, onView }) => {
         />
       </div>
 
+      {error && (
+        <div className="bg-red-50 p-6 rounded-2xl border-2 border-red-100 flex items-center gap-4 text-red-600">
+           <AlertTriangle size={32}/>
+           <div>
+              <div className="font-black text-lg">資料讀取發生錯誤</div>
+              <div className="text-sm">{error}</div>
+           </div>
+        </div>
+      )}
+
       {loading ? (
         <div className="py-20 text-center text-slate-400 flex flex-col items-center">
            <Loader2 className="animate-spin mb-2" size={40}/>
            <p className="font-bold">任務資料載入中...</p>
         </div>
-      ) : filtered.length === 0 ? (
+      ) : jobs.length === 0 && !error ? (
         <div className="py-20 text-center text-slate-300">
            <div className="mb-4 text-4xl">🥥</div>
            <p className="font-bold">目前沒有符合的任務</p>
-           {canWrite && <p className="text-xs mt-2">去喝杯咖啡，或新增一筆？</p>}
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {filtered.map(job => {
-            const cust = customers.find(c => c.customer_id === job.customerId);
-            return (
-              <div 
-                key={job.jobId} 
-                onClick={() => onView(job)} 
-                className="ac-bubble p-5 hover:translate-y-[-4px] hover:shadow-xl transition-all cursor-pointer group bg-white border-[#f2edd4] hover:border-[#78b833]/30 relative overflow-hidden"
-              >
-                {/* Status Badge */}
-                <div className={`absolute top-0 right-0 px-3 py-1 rounded-bl-xl text-[10px] font-black tracking-widest uppercase ${
-                    job.status === JobStatus.COMPLETED ? 'bg-[#78b833] text-white' : 'bg-slate-200 text-slate-500'
-                }`}>
-                    {job.status}
-                </div>
+          {jobs.map(job => (
+            <div 
+              key={job.jobId} 
+              onClick={() => onView(job)} 
+              className="ac-bubble p-5 hover:translate-y-[-4px] hover:shadow-xl transition-all cursor-pointer group bg-white border-[#f2edd4] hover:border-[#78b833]/30 relative overflow-hidden"
+            >
+              <div className={`absolute top-0 right-0 px-3 py-1 rounded-bl-xl text-[10px] font-black tracking-widest uppercase ${
+                  job.status === JobStatus.COMPLETED ? 'bg-[#78b833] text-white' : 'bg-slate-200 text-slate-500'
+              }`}>
+                  {job.status}
+              </div>
 
-                <div className="flex justify-between items-start mb-4">
-                  <div className="flex items-center gap-3">
-                    {renderAvatar(job.customerId)}
-                    <div>
-                      <h3 className="text-lg font-black text-[#5d4a36] group-hover:text-[#78b833] transition-colors leading-tight">
-                        {cust?.displayName || job.contactPerson}
-                      </h3>
-                      <div className="text-xs font-bold text-slate-400 mt-0.5">{job.serviceDate}</div>
-                    </div>
-                  </div>
-                  <div className="text-right pt-6">
-                    <div className="text-2xl font-black text-[#78b833]">
-                      ${getTotalAmount(job)}
-                    </div>
+              <div className="flex justify-between items-start mb-4">
+                <div className="flex items-center gap-3">
+                  <div>
+                    <h3 className="text-lg font-black text-[#5d4a36] group-hover:text-[#78b833] transition-colors leading-tight">
+                      {job.contactPerson}
+                    </h3>
+                    <div className="text-xs font-bold text-slate-400 mt-0.5">{job.serviceDate}</div>
                   </div>
                 </div>
-
-                <div className="bg-[#fcfdec] p-3 rounded-xl border border-[#d9e6c3] flex justify-between items-center mb-4">
-                   <div className="flex gap-2">
-                     {job.serviceItems.includes(ServiceItem.TANK) && (
-                       <div className="flex items-center gap-1 text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded-lg border border-blue-100">
-                         <Droplets size={12}/> 水塔
-                       </div>
-                     )}
-                     {job.serviceItems.includes(ServiceItem.PIPE) && (
-                       <div className="flex items-center gap-1 text-[10px] font-bold text-orange-600 bg-orange-50 px-2 py-1 rounded-lg border border-orange-100">
-                         <Wrench size={12}/> 水管
-                       </div>
-                     )}
-                   </div>
-                   <div className="text-[10px] font-bold text-slate-400">
-                     {job.arrival_time} 抵達
-                   </div>
-                </div>
-
-                <div className="flex justify-between items-center">
-                   <div className="flex gap-1 flex-wrap">
-                     {getCombinedTags(job).map(t => (
-                       <span key={t} className="text-[9px] font-black bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full border border-slate-200">#{t}</span>
-                     ))}
-                   </div>
-                   {canWrite && (
-                     <div className="flex items-center gap-2">
-                       <button 
-                         onClick={(e) => { e.stopPropagation(); setDeleteId(job.jobId); }} 
-                         className="p-1.5 text-slate-200 hover:text-red-400 transition-colors"
-                         title="刪除"
-                       >
-                         <Trash2 size={16} />
-                       </button>
-                     </div>
-                   )}
+                <div className="text-right pt-6">
+                  <div className="text-2xl font-black text-[#78b833]">
+                    ${getTotalAmount(job)}
+                  </div>
                 </div>
               </div>
-            );
-          })}
+
+              <div className="bg-[#fcfdec] p-3 rounded-xl border border-[#d9e6c3] flex justify-between items-center mb-4">
+                 <div className="flex gap-2">
+                   {job.serviceItems.includes(ServiceItem.TANK) && (
+                     <div className="flex items-center gap-1 text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded-lg border border-blue-100">
+                       <Droplets size={12}/> 水塔
+                     </div>
+                   )}
+                   {job.serviceItems.includes(ServiceItem.PIPE) && (
+                     <div className="flex items-center gap-1 text-[10px] font-bold text-orange-600 bg-orange-50 px-2 py-1 rounded-lg border border-orange-100">
+                       <Wrench size={12}/> 水管
+                     </div>
+                   )}
+                 </div>
+              </div>
+
+              {canWrite && (
+                 <div className="flex justify-end">
+                   <button 
+                     onClick={(e) => { e.stopPropagation(); setDeleteId(job.jobId); }} 
+                     className="p-1.5 text-slate-200 hover:text-red-400 transition-colors"
+                   >
+                     <Trash2 size={16} />
+                   </button>
+                 </div>
+               )}
+            </div>
+          ))}
         </div>
       )}
     </div>
