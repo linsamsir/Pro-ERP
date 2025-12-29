@@ -1,13 +1,33 @@
+
 import React from 'react';
 import { db } from '../services/db';
+import { BackupService, BackupLog } from '../services/backupService';
 import { BuildingType, Preference, ServiceItem, JobStatus, Job, Customer } from '../types';
-import { Clipboard, Loader2, ShieldCheck, Database, CheckCircle2, FileSpreadsheet, UserPlus, History, ArrowDown } from 'lucide-react';
+import { Clipboard, Loader2, ShieldCheck, Database, CheckCircle2, FileSpreadsheet, UserPlus, History, ArrowDown, CloudRain, Save, AlertTriangle, Play } from 'lucide-react';
 
 const ImportCenter: React.FC = () => {
-  const [activeTab, setActiveTab] = React.useState<'new' | 'returning'>('new');
+  const [activeTab, setActiveTab] = React.useState<'new' | 'returning' | 'backup'>('new');
+  
+  // Import State
   const [pasteData, setPasteData] = React.useState('');
   const [isProcessing, setIsProcessing] = React.useState(false);
   const [stats, setStats] = React.useState<{ success: number; skipped: number; customers: number } | null>(null);
+
+  // Backup State
+  const [backupLogs, setBackupLogs] = React.useState<Record<string, BackupLog>>({});
+  const [isBackingUp, setIsBackingUp] = React.useState(false);
+  const [backupError, setBackupError] = React.useState<string | null>(null);
+  const [backupConfigured, setBackupConfigured] = React.useState(false);
+
+  React.useEffect(() => {
+    // Check if backup is configured
+    try {
+        BackupService.checkConfig();
+        setBackupConfigured(true);
+    } catch {
+        setBackupConfigured(false);
+    }
+  }, []);
 
   const formatToDateString = (dateStr: string) => {
     if (!dateStr) return new Date().toLocaleDateString('en-CA');
@@ -167,11 +187,8 @@ const ImportCenter: React.FC = () => {
           invoiceNeeded: (rowData['是否收費'] || '').includes('是'),
           
           hasExtraCharge: false, extraChargeAmount: 0, extraChargeNote: '',
-          // leadChannel: '其他', // Removed as it is not in Job interface
           serviceNote: rowData['備註'] || ''
         };
-        // If returning mode, we might want to check if this specific job date is older/newer, 
-        // but for now we just append history.
         
         await db.jobs.save(job, { skipAi: true });
         successCount++;
@@ -186,83 +203,196 @@ const ImportCenter: React.FC = () => {
     setPasteData('');
   };
 
+  const handleBackup = async () => {
+    setIsBackingUp(true);
+    setBackupError(null);
+    setBackupLogs({}); // Clear previous
+
+    try {
+        await BackupService.runBackup((log) => {
+            setBackupLogs(prev => ({
+                ...prev,
+                [log.collection]: log
+            }));
+        });
+    } catch (e: any) {
+        setBackupError(e.message || '備份過程發生錯誤');
+    } finally {
+        setIsBackingUp(false);
+    }
+  };
+
+  const renderBackupStatus = (name: string, label: string) => {
+      const log = backupLogs[name];
+      if (!log) {
+          return (
+              <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100 opacity-50">
+                  <span className="font-bold text-slate-500">{label}</span>
+                  <span className="text-xs text-slate-400">待機中</span>
+              </div>
+          );
+      }
+
+      let colorClass = "bg-blue-50 border-blue-200 text-blue-700";
+      let icon = <Loader2 className="animate-spin" size={16}/>;
+
+      if (log.status === 'COMPLETED') {
+          colorClass = "bg-green-50 border-green-200 text-green-700";
+          icon = <CheckCircle2 size={16}/>;
+      } else if (log.status === 'ERROR') {
+          colorClass = "bg-red-50 border-red-200 text-red-700";
+          icon = <AlertTriangle size={16}/>;
+      }
+
+      return (
+          <div className={`p-3 rounded-xl border flex flex-col gap-2 transition-all ${colorClass}`}>
+              <div className="flex items-center justify-between">
+                  <span className="font-bold">{label}</span>
+                  {icon}
+              </div>
+              <div className="w-full bg-white/50 h-2 rounded-full overflow-hidden">
+                  <div className="h-full bg-current transition-all duration-300" style={{ width: `${log.progress}%` }}></div>
+              </div>
+              <div className="flex justify-between text-xs font-bold opacity-80">
+                  <span>{log.message}</span>
+                  <span>{log.progress}%</span>
+              </div>
+          </div>
+      );
+  };
+
   return (
     <div className="max-w-4xl mx-auto space-y-6 animate-pop pb-20">
       <header>
         <h2 className="text-4xl font-black text-[#5d4a36]">移居服務中心</h2>
         <p className="text-[#b59a7a] mt-2 font-bold flex items-center gap-2">
-          協助處理大量村民資料的遷入作業
+          協助處理大量村民資料的遷入與備份作業
         </p>
       </header>
 
       {/* Type Toggle Tabs */}
-      <div className="flex bg-[#e8dcb9] p-2 rounded-3xl gap-2">
+      <div className="flex bg-[#e8dcb9] p-2 rounded-3xl gap-2 overflow-x-auto">
         <button 
           onClick={() => { setActiveTab('new'); setStats(null); }}
-          className={`flex-1 py-4 rounded-2xl font-black text-lg flex items-center justify-center gap-2 transition-all ${activeTab === 'new' ? 'bg-white text-[#5d4a36] shadow-md' : 'text-[#7c6046] hover:bg-white/50'}`}
+          className={`flex-1 min-w-[140px] py-4 rounded-2xl font-black text-lg flex items-center justify-center gap-2 transition-all ${activeTab === 'new' ? 'bg-white text-[#5d4a36] shadow-md' : 'text-[#7c6046] hover:bg-white/50'}`}
         >
-          <UserPlus size={20} /> 新客移居辦理
+          <UserPlus size={20} /> 新客移居
         </button>
         <button 
           onClick={() => { setActiveTab('returning'); setStats(null); }}
-          className={`flex-1 py-4 rounded-2xl font-black text-lg flex items-center justify-center gap-2 transition-all ${activeTab === 'returning' ? 'bg-[#78b833] text-white shadow-md' : 'text-[#7c6046] hover:bg-white/50'}`}
+          className={`flex-1 min-w-[140px] py-4 rounded-2xl font-black text-lg flex items-center justify-center gap-2 transition-all ${activeTab === 'returning' ? 'bg-[#78b833] text-white shadow-md' : 'text-[#7c6046] hover:bg-white/50'}`}
         >
-          <History size={20} /> 老朋友回歸登記
+          <History size={20} /> 老友回歸
+        </button>
+        <button 
+          onClick={() => { setActiveTab('backup'); setStats(null); }}
+          className={`flex-1 min-w-[140px] py-4 rounded-2xl font-black text-lg flex items-center justify-center gap-2 transition-all ${activeTab === 'backup' ? 'bg-blue-500 text-white shadow-md' : 'text-[#7c6046] hover:bg-white/50'}`}
+        >
+          <CloudRain size={20} /> 雲端備份
         </button>
       </div>
 
-      <div className="ac-card p-8 bg-white">
-        <div className="space-y-6">
-          <div className="flex items-center gap-3 text-[#5d4a36] font-black">
-            <div className="bg-[#fdfaf0] border-2 border-[#eeeada] p-3 rounded-xl text-[#b59a7a]">
-              <FileSpreadsheet size={24} />
-            </div>
-            <div>
-              <div className="text-lg">貼上 Excel 資料</div>
-              <div className="text-xs text-[#b59a7a] font-bold">
-                 {activeTab === 'new' ? '適用：完全沒有來過的全新客戶資料' : '適用：系統已有資料，需補登新的服務紀錄'}
+      {activeTab === 'backup' ? (
+          <div className="ac-card p-8 bg-white animate-pop">
+             <div className="flex items-start gap-4 mb-8">
+                 <div className="bg-blue-100 p-4 rounded-full text-blue-600">
+                     <Save size={32}/>
+                 </div>
+                 <div className="flex-1">
+                     <h3 className="text-2xl font-black text-[#5d4a36]">一鍵備份到 Google Sheet</h3>
+                     <p className="text-[#b59a7a] font-bold mt-1">將村莊的所有紀錄同步到雲端試算表，確保資料安全。</p>
+                 </div>
+             </div>
+
+             {!backupConfigured && (
+                 <div className="bg-red-50 p-4 rounded-xl border border-red-200 text-red-600 font-bold flex items-center gap-3 mb-6">
+                     <AlertTriangle size={24}/>
+                     <div>
+                        尚未設定備份伺服器 (VITE_BACKUP_WEBAPP_URL)。<br/>
+                        <span className="text-xs font-normal">請聯繫系統管理員進行設定。</span>
+                     </div>
+                 </div>
+             )}
+
+             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+                 {renderBackupStatus('customers', '1. 村民名冊 (Customers)')}
+                 {renderBackupStatus('jobs', '2. 任務紀錄 (Jobs)')}
+                 {renderBackupStatus('expenses', '3. 支出紀錄 (Expenses)')}
+                 {renderBackupStatus('assets', '4. 資產設備 (Assets)')}
+                 {renderBackupStatus('stock', '5. 耗材庫存 (Stock)')}
+             </div>
+
+             {backupError && (
+                <div className="bg-red-50 p-4 rounded-xl border border-red-200 text-red-600 font-bold mb-6 text-center animate-bounce">
+                    {backupError}
+                </div>
+             )}
+
+             <div className="flex justify-end">
+                 <button 
+                    onClick={handleBackup}
+                    disabled={isBackingUp || !backupConfigured}
+                    className="bg-blue-500 text-white px-8 py-4 rounded-2xl font-black text-xl shadow-[0_4px_0_#1e40af] active:translate-y-[4px] active:shadow-none transition-all disabled:opacity-50 disabled:shadow-none flex items-center gap-3"
+                 >
+                     {isBackingUp ? <Loader2 className="animate-spin"/> : <Play fill="currentColor"/>}
+                     {isBackingUp ? '正在傳送資料...' : '開始備份'}
+                 </button>
+             </div>
+          </div>
+      ) : (
+          <div className="ac-card p-8 bg-white">
+            <div className="space-y-6">
+              <div className="flex items-center gap-3 text-[#5d4a36] font-black">
+                <div className="bg-[#fdfaf0] border-2 border-[#eeeada] p-3 rounded-xl text-[#b59a7a]">
+                  <FileSpreadsheet size={24} />
+                </div>
+                <div>
+                  <div className="text-lg">貼上 Excel 資料</div>
+                  <div className="text-xs text-[#b59a7a] font-bold">
+                    {activeTab === 'new' ? '適用：完全沒有來過的全新客戶資料' : '適用：系統已有資料，需補登新的服務紀錄'}
+                  </div>
+                </div>
+              </div>
+              
+              <div className="bg-[#f0f9ff] p-4 rounded-xl border border-blue-100 text-xs font-mono text-blue-800 overflow-x-auto whitespace-nowrap">
+                <span className="font-bold text-blue-400 select-none mr-2">建議欄位順序:</span>
+                {activeTab === 'new' 
+                  ? `時間戳記 | 客戶姓名 | 電話 | 住址 | 房屋類型 | 預約日期 | 金額 | 備註`
+                  : `時間戳記 | 客戶編號(選填) | 姓名 | 電話 | 上次清洗日 | 備註`
+                }
+              </div>
+
+              <div className="relative group">
+                <textarea
+                  className="w-full h-64 input-nook font-mono resize-none text-sm leading-relaxed"
+                  placeholder={activeTab === 'new' 
+                    ? "請在此貼上新客戶的 Google Sheet 資料..." 
+                    : "請在此貼上回流客的工單資料..."}
+                  value={pasteData}
+                  onChange={(e) => setPasteData(e.target.value)}
+                />
+                {pasteData.length === 0 && (
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-20">
+                    <ArrowDown size={48} className="text-[#b59a7a] animate-bounce" />
+                  </div>
+                )}
+              </div>
+
+              <div className="flex justify-end">
+                <button
+                  onClick={handleImport}
+                  disabled={!pasteData.trim() || isProcessing}
+                  className="bg-[#78b833] text-white px-8 py-4 rounded-2xl font-black text-xl shadow-[0_4px_0_#4a7a1f] active:translate-y-[4px] active:shadow-none transition-all disabled:opacity-50 disabled:shadow-none"
+                >
+                  {isProcessing ? <Loader2 className="animate-spin" /> : <Database />}
+                  {activeTab === 'new' ? '開始辦理移居' : '更新歷史紀錄'}
+                </button>
               </div>
             </div>
           </div>
-          
-          <div className="bg-[#f0f9ff] p-4 rounded-xl border border-blue-100 text-xs font-mono text-blue-800 overflow-x-auto whitespace-nowrap">
-            <span className="font-bold text-blue-400 select-none mr-2">建議欄位順序:</span>
-            {activeTab === 'new' 
-              ? `時間戳記 | 客戶姓名 | 電話 | 住址 | 房屋類型 | 預約日期 | 金額 | 備註`
-              : `時間戳記 | 客戶編號(選填) | 姓名 | 電話 | 上次清洗日 | 備註`
-            }
-          </div>
+      )}
 
-          <div className="relative group">
-            <textarea
-              className="w-full h-64 input-nook font-mono resize-none text-sm leading-relaxed"
-              placeholder={activeTab === 'new' 
-                ? "請在此貼上新客戶的 Google Sheet 資料..." 
-                : "請在此貼上回流客的工單資料..."}
-              value={pasteData}
-              onChange={(e) => setPasteData(e.target.value)}
-            />
-            {pasteData.length === 0 && (
-              <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-20">
-                <ArrowDown size={48} className="text-[#b59a7a] animate-bounce" />
-              </div>
-            )}
-          </div>
-
-          <div className="flex justify-end">
-            <button
-              onClick={handleImport}
-              disabled={!pasteData.trim() || isProcessing}
-              className="bg-[#78b833] text-white px-8 py-4 rounded-2xl font-black text-xl shadow-[0_4px_0_#4a7a1f] active:translate-y-[4px] active:shadow-none transition-all disabled:opacity-50 disabled:shadow-none"
-            >
-              {isProcessing ? <Loader2 className="animate-spin" /> : <Database />}
-              {activeTab === 'new' ? '開始辦理移居' : '更新歷史紀錄'}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {stats && (
+      {stats && activeTab !== 'backup' && (
         <div className="ac-card p-8 bg-[#f0fdf4] border-green-200 animate-pop">
           <div className="flex items-center gap-4 mb-6">
             <div className="bg-green-100 p-2 rounded-full text-green-600"><CheckCircle2 size={32} /></div>
