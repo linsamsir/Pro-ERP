@@ -162,11 +162,11 @@ const JobManagement: React.FC<JobManagementProps> = ({ initialJob, initialCustom
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!job.customerId) {
-        alert("請先選擇一位村民！");
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-        return;
-    }
+    // [MODIFIED] Removed mandatory customer check to allow debugging flow
+    // if (!job.customerId) {
+    //     alert("請先選擇一位村民！");
+    //     return;
+    // }
 
     await db.jobs.save(job);
     
@@ -445,7 +445,7 @@ const JobManagement: React.FC<JobManagementProps> = ({ initialJob, initialCustom
              </div>
            ) : (
              <div className="flex-1 p-3 text-slate-400 font-bold flex items-center gap-2">
-                <AlertCircle size={20}/> 請先選擇一位村民
+                <AlertCircle size={20}/> 未選擇村民 (可選)
              </div>
            )}
            <button 
@@ -838,8 +838,8 @@ const JobManagement: React.FC<JobManagementProps> = ({ initialJob, initialCustom
            </div>
         </div>
 
-        {/* Submit */}
-        <button type="submit" className="w-full btn-primary text-xl py-5 rounded-2xl shadow-xl disabled:opacity-50 disabled:shadow-none" disabled={!job.customerId}>
+        {/* Submit - [MODIFIED] Removed disabled prop check */}
+        <button type="submit" className="w-full btn-primary text-xl py-5 rounded-2xl shadow-xl">
            <Save size={24} /> 任務完成，領取獎勵！
         </button>
 

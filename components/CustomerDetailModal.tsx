@@ -18,12 +18,12 @@ const CustomerDetailModal: React.FC<CustomerDetailModalProps> = ({ customer, onC
   const canWrite = auth.canWrite();
 
   React.useEffect(() => {
+    console.log('[TRACE][Modal] MOUNTED for:', customer.customer_id);
     const loadHistory = async () => {
       if (!customer.customer_id) return;
       setLoading(true);
       try {
         const jobs = await db.jobs.list({ customerId: customer.customer_id });
-        // Take recent 5
         setHistory(jobs.slice(0, 5));
       } catch (e) {
         console.error(e);
@@ -32,6 +32,7 @@ const CustomerDetailModal: React.FC<CustomerDetailModalProps> = ({ customer, onC
       }
     };
     loadHistory();
+    return () => console.log('[TRACE][Modal] UNMOUNTED');
   }, [customer.customer_id]);
 
   const getPrimaryPhone = (c: Customer) => {
@@ -118,7 +119,6 @@ const CustomerDetailModal: React.FC<CustomerDetailModalProps> = ({ customer, onC
             </div>
           </div>
 
-          {/* History Section (Requirement C) */}
           <div className="pt-4 border-t border-slate-100">
             <h3 className="text-sm font-black text-[#5d4a36] mb-3 flex items-center gap-2">
               <History size={16} className="text-[#b59a7a]"/> 過去清洗紀錄

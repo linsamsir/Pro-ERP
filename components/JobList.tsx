@@ -10,7 +10,8 @@ interface JobListProps {
   onAdd: () => void;
   onEdit: (job: Job) => void;
   onView: (job: Job) => void;
-  onViewCustomer?: (customerId: string) => void;
+  // [REFACTOR] Mandatory prop
+  onViewCustomer: (customerId: string) => void;
 }
 
 const JobList: React.FC<JobListProps> = ({ onAdd, onEdit, onView, onViewCustomer }) => {
@@ -26,10 +27,9 @@ const JobList: React.FC<JobListProps> = ({ onAdd, onEdit, onView, onViewCustomer
     setLoading(true);
     setError(null);
     try {
-      // Parallel fetch for jobs and customers to resolve avatars
       const [jData, cData] = await Promise.all([
          db.jobs.list({ q: searchTerm }),
-         db.customers.getAll() // We need this to map avatars. Efficient enough for small apps.
+         db.customers.getAll()
       ]);
       setJobs(jData);
       
@@ -73,12 +73,20 @@ const JobList: React.FC<JobListProps> = ({ onAdd, onEdit, onView, onViewCustomer
     }
   };
 
+  // [REFACTOR] Unified click handler for customers
   const handleCustomerClick = (e: React.MouseEvent, customerId: string) => {
-    e.stopPropagation();
+    e.stopPropagation(); // Stop bubbling to job view
+    console.log('[TRACE][JobList] Customer Click:', customerId);
+    
+    if (!customerId) {
+        alert("資料錯誤：此任務未綁定 customerId");
+        return;
+    }
+    
     if (onViewCustomer) {
-      onViewCustomer(customerId);
+        onViewCustomer(customerId);
     } else {
-      console.warn("onViewCustomer prop missing in JobList");
+        console.error('[TRACE][JobList] FATAL: onViewCustomer missing');
     }
   };
 
@@ -86,12 +94,12 @@ const JobList: React.FC<JobListProps> = ({ onAdd, onEdit, onView, onViewCustomer
      const c = customerMap[customerId];
      const info = getAvatarInfo(c?.avatar || 'man');
      return (
-        <button 
+        <div 
           onClick={(e) => handleCustomerClick(e, customerId)}
-          className={`w-12 h-12 rounded-full border-2 border-white shadow-sm flex items-center justify-center text-2xl hover:scale-110 transition-transform ${info.color}`}
+          className={`w-12 h-12 rounded-full border-2 border-white shadow-sm flex items-center justify-center text-2xl hover:scale-110 transition-transform cursor-pointer ${info.color}`}
         >
            {info.icon}
-        </button>
+        </div>
      );
   };
 
@@ -169,13 +177,11 @@ const JobList: React.FC<JobListProps> = ({ onAdd, onEdit, onView, onViewCustomer
 
               <div className="flex justify-between items-start mb-4">
                 <div className="flex items-center gap-3">
-                  {/* Restored Avatar */}
                   {renderAvatar(job.customerId)}
-                  
                   <div>
                     <h3 
                       onClick={(e) => handleCustomerClick(e, job.customerId)}
-                      className="text-lg font-black text-[#5d4a36] group-hover:text-[#78b833] transition-colors leading-tight hover:underline"
+                      className="text-lg font-black text-[#5d4a36] group-hover:text-[#78b833] transition-colors leading-tight hover:underline cursor-pointer z-10 relative"
                     >
                       {job.contactPerson}
                     </h3>
@@ -208,7 +214,7 @@ const JobList: React.FC<JobListProps> = ({ onAdd, onEdit, onView, onViewCustomer
                  <div className="flex justify-end">
                    <button 
                      onClick={(e) => { e.stopPropagation(); setDeleteId(job.jobId); }} 
-                     className="p-1.5 text-slate-200 hover:text-red-400 transition-colors"
+                     className="p-1.5 text-slate-200 hover:text-red-400 transition-colors z-20 relative"
                    >
                      <Trash2 size={16} />
                    </button>

@@ -8,7 +8,8 @@ import { Plus, Search, MapPin, Phone, User, Lock, Loader2, AlertTriangle, Histor
 interface CustomerListProps {
   onAdd: () => void;
   onEdit: (c: Customer) => void;
-  onViewCustomer?: (c: Customer) => void;
+  // [REFACTOR] Made mandatory to prevent silent failures in parent integration
+  onViewCustomer: (c: Customer) => void; 
 }
 
 const CustomerList: React.FC<CustomerListProps> = ({ onAdd, onEdit, onViewCustomer }) => {
@@ -68,11 +69,20 @@ const CustomerList: React.FC<CustomerListProps> = ({ onAdd, onEdit, onViewCustom
     return <div className={containerClass}>{info.icon}</div>;
   };
 
+  // [REFACTOR] Single Source of Truth for clicking
   const handleCardClick = (c: Customer) => {
+    console.log('[TRACE][CustomerList] Click detected', {
+        id: c.customer_id, 
+        name: c.displayName,
+        handlerExists: !!onViewCustomer
+    });
+
     if (onViewCustomer) {
-      onViewCustomer(c);
+        onViewCustomer(c);
     } else {
-      console.warn("onViewCustomer prop missing in CustomerList");
+        // This should logically imply a parent bug since prop is mandatory
+        console.error('[TRACE][CustomerList] FATAL: onViewCustomer prop is missing/undefined!');
+        alert("系統錯誤：無法開啟詳情 (Handler Missing)");
     }
   };
 
@@ -132,9 +142,10 @@ const CustomerList: React.FC<CustomerListProps> = ({ onAdd, onEdit, onViewCustom
               key={c.customer_id} 
               onClick={() => handleCardClick(c)} 
               className="ac-bubble p-6 hover:scale-[1.02] transition-all cursor-pointer group bg-white text-left w-full relative active:scale-[0.98]"
+              style={{ cursor: 'pointer' }} // Force cursor
             >
               <div className="flex justify-between items-start mb-4">
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-4 pointer-events-none"> {/* Prevent double click on inner elements */}
                   {renderAvatar(c, 'sm')}
                   <div>
                     <h3 className="text-lg font-black text-[#5d4a36] group-hover:text-[#78b833] line-clamp-1">{c.displayName}</h3>
@@ -152,7 +163,7 @@ const CustomerList: React.FC<CustomerListProps> = ({ onAdd, onEdit, onViewCustom
                    {c.interactionStatus === 'devil' && <span className="text-lg" title="黑名單">😈</span>}
                 </div>
               </div>
-              <div className="space-y-1 mb-4">
+              <div className="space-y-1 mb-4 pointer-events-none">
                 <div className="flex items-center gap-2 text-xs font-bold text-[#b59a7a]">
                   <Phone size={12} /> {getPrimaryPhone(c)}
                 </div>
@@ -164,7 +175,7 @@ const CustomerList: React.FC<CustomerListProps> = ({ onAdd, onEdit, onViewCustom
               
               {/* Tags Section */}
               {c.ai_tags && c.ai_tags.length > 0 && (
-                 <div className="flex gap-1 flex-wrap pt-2 border-t border-slate-100">
+                 <div className="flex gap-1 flex-wrap pt-2 border-t border-slate-100 pointer-events-none">
                     {c.ai_tags.slice(0, 3).map(t => (
                       <span key={t} className="text-[9px] bg-slate-50 text-slate-400 px-2 py-1 rounded border border-slate-100">#{t}</span>
                     ))}

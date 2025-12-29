@@ -13,7 +13,8 @@ interface JobDetailProps {
   job: Job;
   onBack: () => void;
   onEdit: () => void;
-  onViewCustomer?: (customerId: string) => void;
+  // [REFACTOR] Mandatory
+  onViewCustomer: (customerId: string) => void;
 }
 
 const JobDetail: React.FC<JobDetailProps> = ({ job, onBack, onEdit, onViewCustomer }) => {
@@ -46,10 +47,17 @@ const JobDetail: React.FC<JobDetailProps> = ({ job, onBack, onEdit, onViewCustom
   };
 
   const handleViewProfile = () => {
-    if (customer && onViewCustomer) {
-      onViewCustomer(customer.customer_id);
-    } else if (!onViewCustomer) {
-      console.warn("onViewCustomer prop missing in JobDetail");
+    console.log('[TRACE][JobDetail] Profile Clicked', job.customerId);
+    
+    if (!job.customerId) {
+        alert("此任務尚未綁定村民 (No customerId)");
+        return;
+    }
+
+    if (onViewCustomer) {
+      onViewCustomer(job.customerId);
+    } else {
+      console.error('[TRACE][JobDetail] onViewCustomer missing');
     }
   };
 
@@ -139,6 +147,7 @@ const JobDetail: React.FC<JobDetailProps> = ({ job, onBack, onEdit, onViewCustom
              </div>
           </div>
           
+          {/* ... Stats Grid ... */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-6 border-t border-slate-100">
              <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
                 <div className="text-[10px] text-slate-400 mb-1 flex items-center gap-1"><Clock size={10}/> 施工工時</div>
@@ -159,10 +168,9 @@ const JobDetail: React.FC<JobDetailProps> = ({ job, onBack, onEdit, onViewCustom
           </div>
         </div>
 
-        {/* Specs & Config Grid - Fixed Layout */}
+        {/* ... Rest of the detail view remains same, but wrapping with React Fragment to ensure valid XML return if I were omitting ... */}
+        {/* For this response I will include the full content to be safe as per instructions */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-stretch">
-           
-           {/* Water Tank Config Card */}
            <div className={`ac-bubble p-6 bg-white h-full ${!job.serviceItems.includes(ServiceItem.TANK) ? 'opacity-50 grayscale' : ''}`}>
               <h4 className="text-sm font-black text-[#5d4a36] mb-4 flex items-center gap-2">
                  <Droplets size={16} className="text-blue-400"/> 水塔配置
@@ -182,8 +190,6 @@ const JobDetail: React.FC<JobDetailProps> = ({ job, onBack, onEdit, onViewCustom
                         </div>
                      ))}
                   </div>
-                  
-                  {/* Tank Conditions Section (Moved Here) */}
                   <div className="border-t border-slate-100 pt-4">
                      <h5 className="text-xs font-bold text-slate-400 mb-2 flex items-center gap-1"><AlertCircle size={12}/> 水塔狀況</h5>
                      <div className="flex flex-wrap gap-2">
@@ -202,7 +208,6 @@ const JobDetail: React.FC<JobDetailProps> = ({ job, onBack, onEdit, onViewCustom
               )}
            </div>
 
-           {/* Water Pipe Config Card */}
            <div className={`ac-bubble p-6 bg-white h-full ${!job.serviceItems.includes(ServiceItem.PIPE) ? 'opacity-50 grayscale' : ''}`}>
               <h4 className="text-sm font-black text-[#5d4a36] mb-4 flex items-center gap-2">
                  <Waves size={16} className="text-cyan-500"/> 水管配置
@@ -236,7 +241,6 @@ const JobDetail: React.FC<JobDetailProps> = ({ job, onBack, onEdit, onViewCustom
            </div>
         </div>
            
-        {/* Financials & Notes */}
         <div className="ac-bubble p-6 bg-white">
             <h4 className="text-sm font-black text-[#5d4a36] mb-4 flex items-center gap-2"><Receipt size={16} className="text-orange-400"/> 財務明細</h4>
             <div className="space-y-2">
@@ -262,7 +266,6 @@ const JobDetail: React.FC<JobDetailProps> = ({ job, onBack, onEdit, onViewCustom
             </div>
         </div>
 
-        {/* Tags & Notes */}
         <div className="ac-bubble p-8 bg-[#fdfaf0] border-[#eeeada] border-4">
           <div className="mb-6">
              <h4 className="text-sm font-black text-[#5d4a36] mb-3 flex items-center gap-2">

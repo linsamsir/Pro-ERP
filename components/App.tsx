@@ -16,7 +16,7 @@ import CustomerDetailModal from './components/CustomerDetailModal';
 import { Customer, Job } from './types';
 import { auth } from './services/auth';
 import { db } from './services/db';
-import { AlertTriangle, Loader2 } from 'lucide-react';
+import { AlertTriangle } from 'lucide-react';
 
 type View = 'dashboard' | 'boss_dashboard' | 'analysis' | 'customers' | 'customer_add' | 'customer_edit' | 'jobs' | 'job_add' | 'job_edit' | 'job_view' | 'import' | 'changelog';
 
@@ -32,60 +32,69 @@ const DecoyView = () => (
 );
 
 const App: React.FC = () => {
-  const [isAuthenticated, setIsAuthenticated] = React.useState(false);
-  const [isLoading, setIsLoading] = React.useState(true);
-  const [activeView, setActiveView] = React.useState<View>('boss_dashboard'); 
+  const [isAuthenticated, setIsAuthenticated] = React.useState(auth.isAuthenticated());
+  const [activeView, setActiveView] = React.useState<View>('boss_dashboard'); // Default to Boss Dashboard after login
   const [selectedCustomer, setSelectedCustomer] = React.useState<Customer | undefined>();
   const [selectedJob, setSelectedJob] = React.useState<Job | undefined>();
   
-  // State for "Quick Add Customer" modal
+  // State for the "Quick Add Customer" modal flow
   const [isQuickAddModalOpen, setIsQuickAddModalOpen] = React.useState(false);
   const [quickAddPhone, setQuickAddPhone] = React.useState('');
 
-  // Global Viewing Customer State (D1 Requirement)
+  // State for Customer Detail Modal
   const [viewingCustomer, setViewingCustomer] = React.useState<Customer | null>(null);
 
   React.useEffect(() => {
+    // Check auth on mount
     auth.init((user) => {
       setIsAuthenticated(!!user);
-      setIsLoading(false);
-      // If user logs in and is STAFF, maybe redirect to Dashboard instead of Boss Dashboard?
-      if (user && user.role === 'STAFF') setActiveView('dashboard');
     });
   }, []);
 
-  if (isLoading) {
-    return <div className="h-screen flex items-center justify-center bg-[#fbf8e6] text-[#5d4a36]"><Loader2 size={40} className="animate-spin"/></div>;
-  }
-
   const handleLoginSuccess = () => {
-    // Auth init listener handles state
+    setIsAuthenticated(true);
+    setActiveView('boss_dashboard');
   };
 
   if (!isAuthenticated) {
     return <Login onLoginSuccess={handleLoginSuccess} />;
   }
 
+  // Handle Decoy
   const user = auth.getCurrentUser();
   if (user?.role === 'DECOY') {
     return <DecoyView />;
   }
 
-  // Helper to open customer detail from any view
-  const handleViewCustomer = async (customerId: string | Customer) => {
-    if (!customerId) return;
+  // Robust Handler for Viewing Customer
+  const handleViewCustomer = async (input: string | Customer) => {
+    console.log('[TRACE][App] handleViewCustomer called', input);
 
-    if (typeof customerId === 'object') {
-        // Passed full customer object
-        setViewingCustomer(customerId);
+    if (!input) {
+        console.error('[TRACE][App] Abort: input is null/undefined');
+        return;
+    }
+
+    if (typeof input === 'object') {
+        console.log('[TRACE][App] Setting viewingCustomer (Object)', input.customer_id);
+        setViewingCustomer(input);
         return;
     }
     
-    const c = await db.customers.get(customerId);
-    if (c) {
-      setViewingCustomer(c);
-    } else {
-      alert("找不到該村民資料");
+    // It's a string ID
+    console.log('[TRACE][App] Fetching customer by ID', input);
+    try {
+        const c = await db.customers.get(input);
+        if (c) {
+          console.log('[TRACE][App] Fetched and setting', c.customer_id);
+          setViewingCustomer(c);
+        } else {
+          console.error('[TRACE][App] Customer not found for ID', input);
+          alert("找不到該村民資料");
+        }
+    } catch (e) {
+        console.error(e);
+        alert("讀取村民資料發生錯誤");
     }
   };
 
@@ -215,10 +224,10 @@ const App: React.FC = () => {
             setActiveView('customer_edit');
           }}
           onDelete={async (id) => {
-             if(confirm("確定刪除此村民？")) {
+            if(confirm("確定刪除此村民？")) {
                 await db.customers.delete(id);
                 setViewingCustomer(null);
-             }
+            }
           }}
         />
       )}
