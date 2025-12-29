@@ -1,4 +1,22 @@
 
+// ... existing imports ...
+
+// [NEW] Unified View Keys
+export type AppView = 
+  | 'dashboard'       // 村莊地圖
+  | 'today_mission'   // 今日任務 (New RPG Flow)
+  | 'boss_dashboard'  // 老闆戰情
+  | 'analysis'        // 進階分析
+  | 'customers'       // 村民名冊
+  | 'customer_add'
+  | 'customer_edit'
+  | 'jobs'            // 村莊任務列表
+  | 'job_add'
+  | 'job_edit'
+  | 'job_view'
+  | 'import'          // 移居中心
+  | 'changelog';      // 變更紀錄
+
 export enum Preference {
   PHONE = '電話',
   MESSAGE = '訊息'

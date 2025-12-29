@@ -4,19 +4,21 @@ import { Customer, AvatarType } from '../types';
 import { db } from '../services/db';
 import { auth } from '../services/auth';
 import { Plus, Search, MapPin, Phone, User, Lock, Loader2, AlertTriangle, History } from 'lucide-react';
+import CustomerDetailModal from './CustomerDetailModal';
 
 interface CustomerListProps {
   onAdd: () => void;
   onEdit: (c: Customer) => void;
-  // [REFACTOR] Made mandatory to prevent silent failures in parent integration
-  onViewCustomer: (c: Customer) => void; 
 }
 
-const CustomerList: React.FC<CustomerListProps> = ({ onAdd, onEdit, onViewCustomer }) => {
+const CustomerList: React.FC<CustomerListProps> = ({ onAdd, onEdit }) => {
   const [customers, setCustomers] = React.useState<Customer[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [searchTerm, setSearchTerm] = React.useState('');
+  
+  // [REFACTOR] Store ID instead of object
+  const [selectedCustomerId, setSelectedCustomerId] = React.useState<string | null>(null);
   
   const canWrite = auth.canWrite();
 
@@ -69,20 +71,21 @@ const CustomerList: React.FC<CustomerListProps> = ({ onAdd, onEdit, onViewCustom
     return <div className={containerClass}>{info.icon}</div>;
   };
 
-  // [REFACTOR] Single Source of Truth for clicking
+  // [REFACTOR] Handle ID
   const handleCardClick = (c: Customer) => {
-    console.log('[TRACE][CustomerList] Click detected', {
-        id: c.customer_id, 
-        name: c.displayName,
-        handlerExists: !!onViewCustomer
-    });
+    console.log('[CustomerList] open', c.customer_id);
+    setSelectedCustomerId(c.customer_id);
+  };
 
-    if (onViewCustomer) {
-        onViewCustomer(c);
-    } else {
-        // This should logically imply a parent bug since prop is mandatory
-        console.error('[TRACE][CustomerList] FATAL: onViewCustomer prop is missing/undefined!');
-        alert("系統錯誤：無法開啟詳情 (Handler Missing)");
+  const handleModalClose = () => {
+    setSelectedCustomerId(null);
+  };
+
+  const handleDeleteCustomer = async (id: string) => {
+    if(confirm("確定刪除此村民？(此操作無法復原)")) {
+        await db.customers.delete(id);
+        setSelectedCustomerId(null);
+        fetchData(); // Refresh list after delete
     }
   };
 
@@ -142,10 +145,10 @@ const CustomerList: React.FC<CustomerListProps> = ({ onAdd, onEdit, onViewCustom
               key={c.customer_id} 
               onClick={() => handleCardClick(c)} 
               className="ac-bubble p-6 hover:scale-[1.02] transition-all cursor-pointer group bg-white text-left w-full relative active:scale-[0.98]"
-              style={{ cursor: 'pointer' }} // Force cursor
+              style={{ cursor: 'pointer' }}
             >
               <div className="flex justify-between items-start mb-4">
-                <div className="flex items-center gap-4 pointer-events-none"> {/* Prevent double click on inner elements */}
+                <div className="flex items-center gap-4 pointer-events-none">
                   {renderAvatar(c, 'sm')}
                   <div>
                     <h3 className="text-lg font-black text-[#5d4a36] group-hover:text-[#78b833] line-clamp-1">{c.displayName}</h3>
@@ -186,6 +189,17 @@ const CustomerList: React.FC<CustomerListProps> = ({ onAdd, onEdit, onViewCustom
           ))}
         </div>
       )}
+
+      {/* [REFACTOR] Use ID-based Modal */}
+      <CustomerDetailModal 
+          customerId={selectedCustomerId}
+          onClose={handleModalClose}
+          onEdit={(c) => {
+              setSelectedCustomerId(null);
+              onEdit(c);
+          }}
+          onDelete={handleDeleteCustomer}
+      />
     </div>
   );
 };

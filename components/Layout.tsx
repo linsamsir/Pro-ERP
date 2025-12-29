@@ -1,14 +1,15 @@
 
 import React from 'react';
-import { Home, Users, ClipboardList, Menu, Tent, Crown, PieChart, Activity, LogOut, User as UserIcon, Bug, Wallet } from 'lucide-react';
+import { Home, Users, ClipboardList, Menu, Tent, Crown, PieChart, Activity, LogOut, User as UserIcon, Bug, Sword } from 'lucide-react';
 import { auth } from '../services/auth';
+import { AppView } from '../types';
 import ConfirmDialog from './ConfirmDialog';
 import DebugPanel from './DebugPanel';
 
 interface LayoutProps {
   children: React.ReactNode;
-  activeView: string;
-  onNavigate: (view: string) => void;
+  activeView: AppView;
+  onNavigate: (view: AppView) => void;
 }
 
 const Layout: React.FC<LayoutProps> = ({ children, activeView, onNavigate }) => {
@@ -17,10 +18,10 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onNavigate }) => 
   const [showDebug, setShowDebug] = React.useState(false);
   const user = auth.getCurrentUser();
 
-  const navItems = [
+  const navItems: { id: AppView; label: string; icon: any; color: string }[] = [
     { id: 'dashboard', label: '村莊地圖', icon: Home, color: 'text-orange-500' },
+    { id: 'today_mission', label: '今日任務', icon: Sword, color: 'text-red-500' },
     { id: 'boss_dashboard', label: '老闆戰情', icon: Crown, color: 'text-yellow-500' },
-    // Removed Expenses Item
     { id: 'analysis', label: '進階分析', icon: PieChart, color: 'text-indigo-500' },
     { id: 'customers', label: '村民名冊', icon: Users, color: 'text-blue-500' },
     { id: 'jobs', label: '村莊任務', icon: ClipboardList, color: 'text-green-600' },
@@ -60,7 +61,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onNavigate }) => 
         <button onClick={() => setMenuOpen(!menuOpen)}><Menu size={28} /></button>
       </div>
 
-      {/* Sidebar / NookPhone Menu */}
+      {/* Sidebar */}
       <aside className={`
         fixed inset-y-0 left-0 z-40 w-72 bg-[#f2edd4] border-r-4 border-[#e6e0c6] transform transition-transform duration-300 md:relative md:translate-x-0
         ${menuOpen ? 'translate-x-0' : '-translate-x-full'}
@@ -85,6 +86,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onNavigate }) => 
               <button
                 key={item.id}
                 onClick={() => {
+                  console.log('[Layout] Menu clicked:', item.id);
                   onNavigate(item.id);
                   setMenuOpen(false);
                 }}
@@ -122,7 +124,6 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onNavigate }) => 
           backgroundImage: 'radial-gradient(#78b833 1px, transparent 1px)',
           backgroundSize: '40px 40px'
         }} />
-        {/* Adjusted padding for full-height views like Analysis */}
         <div className={`relative z-10 mx-auto ${['analysis'].includes(activeView) ? 'h-full p-0' : 'p-4 md:p-10 max-w-7xl'}`}>
           {children}
         </div>

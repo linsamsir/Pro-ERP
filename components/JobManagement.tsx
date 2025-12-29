@@ -3,6 +3,7 @@ import React from 'react';
 import { db } from '../services/db';
 import { Job, JobStatus, ServiceItem, TankConfig, Customer, ExtraItem, AvatarType } from '../types';
 import { Save, ArrowLeft, Calendar, Receipt, Wrench, ChevronDown, ChevronUp, Plus, Trash2, CheckCircle2, Clock, Minus, AlertCircle, Home, MapPin, Car, Edit2, X, Tag, User, Search, RefreshCw } from 'lucide-react';
+import CustomerDetailModal from './CustomerDetailModal'; // Import Modal
 
 interface JobManagementProps {
   initialJob?: Job;
@@ -93,6 +94,9 @@ const JobManagement: React.FC<JobManagementProps> = ({ initialJob, initialCustom
   const [pickerSearch, setPickerSearch] = React.useState('');
   const [allCustomers, setAllCustomers] = React.useState<Customer[]>([]);
 
+  // [REFACTOR] Viewing Modal State
+  const [viewingCustomerId, setViewingCustomerId] = React.useState<string | null>(null);
+
   // Load customers for picker
   React.useEffect(() => {
     const loadC = async () => {
@@ -161,15 +165,7 @@ const JobManagement: React.FC<JobManagementProps> = ({ initialJob, initialCustom
   // Submit Logic
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    // [MODIFIED] Removed mandatory customer check to allow debugging flow
-    // if (!job.customerId) {
-    //     alert("請先選擇一位村民！");
-    //     return;
-    // }
-
     await db.jobs.save(job);
-    
     setShowSuccessModal(true);
     const timer = setInterval(() => {
       setCountdown((prev) => {
@@ -433,12 +429,16 @@ const JobManagement: React.FC<JobManagementProps> = ({ initialJob, initialCustom
                 {(() => {
                    const info = getAvatarInfo(activeCustomer.avatar || 'man');
                    return (
-                     <div className={`w-14 h-14 rounded-full flex items-center justify-center text-3xl shrink-0 ${info.color}`}>
+                     <button 
+                        type="button"
+                        onClick={() => setViewingCustomerId(activeCustomer.customer_id)}
+                        className={`w-14 h-14 rounded-full flex items-center justify-center text-3xl shrink-0 ${info.color} hover:scale-110 transition-transform`}
+                     >
                        {info.icon}
-                     </div>
+                     </button>
                    );
                 })()}
-                <div>
+                <div onClick={() => setViewingCustomerId(activeCustomer.customer_id)} className="cursor-pointer hover:opacity-70">
                    <div className="font-black text-lg text-[#5d4a36]">{activeCustomer.displayName}</div>
                    <div className="text-xs font-bold text-slate-400 font-mono">{activeCustomer.customer_id}</div>
                 </div>
@@ -844,6 +844,12 @@ const JobManagement: React.FC<JobManagementProps> = ({ initialJob, initialCustom
         </button>
 
       </form>
+
+      {/* [FIX] View Customer Modal */}
+      <CustomerDetailModal 
+        customerId={viewingCustomerId}
+        onClose={() => setViewingCustomerId(null)}
+      />
     </div>
   );
 };

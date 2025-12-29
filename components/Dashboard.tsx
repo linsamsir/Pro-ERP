@@ -1,185 +1,206 @@
+
 import React from 'react';
 import { db } from '../services/db';
 import { Customer } from '../types';
 import { auth } from '../services/auth';
-import { Search, Phone, UserPlus, ArrowRight, Tent, Star, X, User, Lock, Eye } from 'lucide-react';
+import { Map, MapPin, Users, ChevronRight } from 'lucide-react';
+import CustomerDetailModal from './CustomerDetailModal';
 
-interface DashboardProps {
-  onStartReport: (customer: Customer, phone?: string) => void;
-  onAddCustomer: (phone: string) => void;
+// --- Types ---
+type City = '高雄市' | '台南市' | '屏東縣';
+interface DistrictStat {
+  name: string;
+  count: number;
+  customers: Customer[];
 }
 
-type SearchState = 'IDLE' | 'FOUND' | 'NOT_FOUND';
-
-const Dashboard: React.FC<DashboardProps> = ({ onStartReport, onAddCustomer }) => {
-  const [phoneInput, setPhoneInput] = React.useState('');
-  const [foundCustomer, setFoundCustomer] = React.useState<Customer | null>(null);
-  const [searchState, setSearchState] = React.useState<SearchState>('IDLE');
+const Dashboard: React.FC = () => {
+  const [activeCity, setActiveCity] = React.useState<City>('高雄市');
+  const [mapData, setMapData] = React.useState<Record<string, DistrictStat[]>>({});
+  const [selectedDistrict, setSelectedDistrict] = React.useState<DistrictStat | null>(null);
+  const [totalCustomers, setTotalCustomers] = React.useState(0);
   
-  const canWrite = auth.canWrite();
+  // Local Modal State
+  const [viewingCustomerId, setViewingCustomerId] = React.useState<string | null>(null);
 
-  // Normalize: Remove non-digits
-  const normalizePhone = (p: string) => p.replace(/[^\d]/g, '');
-
-  const handleSearch = async (input: string) => {
-    const cleanPhone = normalizePhone(input);
+  // --- Address Parsing Logic ---
+  const parseAddress = (addr: string): { city: string, district: string } => {
+    if (!addr) return { city: '未知', district: '未知' };
     
-    if (cleanPhone.length < 4) {
-      setSearchState('IDLE');
-      setFoundCustomer(null);
-      return;
-    }
-
-    const customers = await db.customers.getAll();
-    const match = customers.find(c => 
-      c.phones.some(p => normalizePhone(p.number).includes(cleanPhone))
-    );
+    // Regex for Taiwan Address: 3 chars for City, then District
+    // Matches "高雄市" + "楠梓區"
+    const regex = /(?<city>.{2}[市縣])(?<district>.+?[鄉鎮市區])/;
+    const match = addr.match(regex);
     
-    if (match) {
-      setFoundCustomer(match);
-      setSearchState('FOUND');
-    } else {
-      setFoundCustomer(null);
-      setSearchState('NOT_FOUND');
+    if (match && match.groups) {
+        let { city, district } = match.groups;
+        // Normalize Kaohsiung/Tainan/Pingtung
+        if (city.includes('高雄')) city = '高雄市';
+        if (city.includes('台南') || city.includes('臺南')) city = '台南市';
+        if (city.includes('屏東')) city = '屏東縣';
+        return { city, district };
     }
-  };
-
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = e.target.value;
-    setPhoneInput(val);
     
-    // Simple debounce/threshold logic
-    if (val.length === 0) {
-      setSearchState('IDLE');
-      setFoundCustomer(null);
-    } else {
-      handleSearch(val);
-    }
+    return { city: '其他', district: '未知' };
   };
 
-  const clearSearch = () => {
-    setPhoneInput('');
-    setSearchState('IDLE');
-    setFoundCustomer(null);
+  React.useEffect(() => {
+    const loadData = async () => {
+        const all = await db.customers.getAll();
+        setTotalCustomers(all.length);
+
+        const grouped: Record<string, Record<string, Customer[]>> = {
+            '高雄市': {}, '台南市': {}, '屏東縣': {}, '其他': {}
+        };
+
+        all.forEach(c => {
+            const addr = c.addresses.find(a => a.isPrimary)?.text || c.addresses[0]?.text || '';
+            const { city, district } = parseAddress(addr);
+            
+            const targetCity = grouped[city] ? city : '其他';
+            if (!grouped[targetCity][district]) {
+                grouped[targetCity][district] = [];
+            }
+            grouped[targetCity][district].push(c);
+        });
+
+        // Convert to Array for rendering
+        const finalMap: Record<string, DistrictStat[]> = {};
+        Object.keys(grouped).forEach(city => {
+            finalMap[city] = Object.keys(grouped[city]).map(dist => ({
+                name: dist,
+                count: grouped[city][dist].length,
+                customers: grouped[city][dist]
+            })).sort((a, b) => b.count - a.count); // Sort by popularity
+        });
+
+        setMapData(finalMap);
+        
+        // Auto select top district of Kaohsiung initially if available
+        if (finalMap['高雄市']?.length > 0) {
+            setSelectedDistrict(finalMap['高雄市'][0]);
+        }
+    };
+    loadData();
+  }, []);
+
+  // --- Visual Helpers ---
+  const getTileColor = (count: number) => {
+      if (count === 0) return 'bg-slate-100 border-slate-200 text-slate-300';
+      if (count <= 2) return 'bg-[#ecfccb] border-[#d9f99d] text-[#3f6212]'; // Lime-100
+      if (count <= 5) return 'bg-[#bef264] border-[#84cc16] text-[#3f6212]'; // Lime-300
+      if (count <= 10) return 'bg-[#84cc16] border-[#4d7c0f] text-white'; // Lime-500
+      return 'bg-[#4d7c0f] border-[#365314] text-white'; // Lime-700
   };
 
-  const getPrimaryPhone = (c: Customer) => {
-    const raw = c.phones.find(p => p.isPrimary)?.number || c.phones[0]?.number;
-    return auth.maskSensitiveData(raw, 'phone');
+  const getTileSize = (count: number) => {
+      // Dynamic sizing for "Heatmap" feel
+      if (count > 10) return 'col-span-2 row-span-2';
+      return 'col-span-1 row-span-1';
   };
-
-  const renderFoundCard = () => (
-    <div 
-      onClick={() => canWrite && foundCustomer && onStartReport(foundCustomer)}
-      className={`bg-white border-4 border-[#78b833] p-6 rounded-[2rem] shadow-lg animate-pop relative overflow-hidden group transition-all ${canWrite ? 'cursor-pointer active:scale-[0.98]' : 'cursor-default opacity-90'}`}
-    >
-       <div className="absolute right-0 top-0 p-3 bg-[#78b833] text-white rounded-bl-2xl font-black text-xs z-10">
-         已建檔村民
-       </div>
-       
-       <div className="flex items-center gap-6 mb-6">
-         <div className={`w-20 h-20 rounded-full flex items-center justify-center text-5xl border-4 border-[#f0fdf4] shadow-inner ${
-           foundCustomer?.interactionStatus === 'angel' ? 'bg-yellow-50' : 
-           foundCustomer?.interactionStatus === 'devil' ? 'bg-purple-50' : 'bg-slate-50'
-         }`}>
-           {foundCustomer?.avatar === 'grandpa' ? '👴' : 
-            foundCustomer?.avatar === 'grandma' ? '👵' : 
-            foundCustomer?.avatar === 'building' ? '🏢' : '🏠'}
-           {foundCustomer?.interactionStatus === 'angel' && <span className="absolute -top-1 -right-1 text-xl">😇</span>}
-           {foundCustomer?.interactionStatus === 'devil' && <span className="absolute -top-1 -right-1 text-xl">😈</span>}
-         </div>
-         <div className="flex-1">
-           <h3 className="text-2xl font-black text-[#5d4a36] leading-tight mb-1">{foundCustomer?.displayName}</h3>
-           <p className="text-lg font-bold text-[#b59a7a] font-mono tracking-wide">{getPrimaryPhone(foundCustomer!)}</p>
-           <p className="text-xs font-bold text-slate-400 mt-1">上次服務: {foundCustomer?.last_service_date || '新朋友'}</p>
-         </div>
-       </div>
-
-       <button 
-         disabled={!canWrite}
-         className={`w-full py-4 rounded-2xl font-black text-xl transition-all flex items-center justify-center gap-3 ${canWrite ? 'bg-[#78b833] text-white shadow-[0_4px_0_#4a7a1f] active:translate-y-[4px] active:shadow-none' : 'bg-slate-100 text-slate-400 cursor-not-allowed'}`}
-       >
-         {canWrite ? (
-           <>
-             <div className="bg-white/20 p-1 rounded-lg"><Tent size={20} /></div>
-             開始任務回報
-           </>
-         ) : (
-           <>
-             <Eye size={20} /> 僅供檢視 (無操作權限)
-           </>
-         )}
-       </button>
-    </div>
-  );
-
-  const renderNotFoundCard = () => (
-    <div className="bg-white border-4 border-orange-200 p-6 rounded-[2rem] shadow-lg animate-pop text-center">
-       <div className="inline-block p-4 bg-orange-50 rounded-full mb-4 animate-bounce">
-         <div className="text-4xl">🤔</div>
-       </div>
-       <h3 className="text-xl font-black text-[#5d4a36] mb-1">找不到這個電話</h3>
-       <p className="text-sm font-bold text-[#b59a7a] mb-6">這是一位新搬來的村民嗎？</p>
-       
-       <button 
-         onClick={() => canWrite && onAddCustomer(phoneInput)}
-         disabled={!canWrite}
-         className={`w-full py-4 rounded-2xl font-black text-xl transition-all flex items-center justify-center gap-3 ${canWrite ? 'bg-orange-400 text-white shadow-[0_4px_0_#c2410c] active:translate-y-[4px] active:shadow-none' : 'bg-slate-100 text-slate-400 cursor-not-allowed'}`}
-       >
-         {canWrite ? <><UserPlus size={24} /> 新增村民並開始回報</> : <><Lock size={20} /> 無新增權限</>}
-       </button>
-    </div>
-  );
 
   return (
-    <div className="max-w-xl mx-auto py-8 px-4 min-h-[80vh] flex flex-col">
+    <div className="max-w-6xl mx-auto pb-20 animate-pop flex flex-col h-[calc(100vh-100px)]">
       
       {/* Header */}
-      <div className="text-center mb-8 pt-4">
-        <h1 className="text-3xl font-black text-[#5d4a36] mb-2 flex items-center justify-center gap-2">
-          <Tent size={32} className="text-[#78b833]" /> 清潔小村
-        </h1>
-        <p className="text-[#b59a7a] font-bold">輸入電話，立即開始今日任務</p>
+      <div className="flex justify-between items-end mb-6 shrink-0">
+         <div>
+            <h1 className="text-h1 text-[#5d4a36] flex items-center gap-3">
+               <Map size={36} className="text-[#78b833]"/> 村莊地圖 <span className="text-sm bg-slate-100 text-slate-500 px-2 py-1 rounded-lg">領地分布</span>
+            </h1>
+         </div>
+         <div className="bg-white px-4 py-2 rounded-xl border-2 border-[#e8dcb9] shadow-sm">
+            <span className="text-xs font-bold text-slate-400">目前總村民</span>
+            <div className="text-2xl font-black text-[#5d4a36]">{totalCustomers} <span className="text-sm text-[#b59a7a]">人</span></div>
+         </div>
       </div>
 
-      {/* Main Input Area (Sticky-ish feel) */}
-      <div className="mb-8 relative z-20">
-        <div className="relative transform transition-all hover:scale-[1.02]">
-           <div className="absolute left-6 top-1/2 -translate-y-1/2 text-[#d6cbb6]">
-             <Phone size={32} />
-           </div>
-           <input 
-             type="tel" 
-             inputMode="numeric"
-             className="w-full pl-16 pr-14 py-6 text-4xl font-black text-[#5d4a36] bg-white border-[5px] border-[#e8dcb9] rounded-full outline-none focus:border-[#78b833] transition-all placeholder:text-slate-200 shadow-xl text-center tracking-widest font-mono"
-             placeholder="09..."
-             value={phoneInput}
-             onChange={handleInputChange}
-             autoFocus
-           />
-           {phoneInput && (
-             <button 
-               onClick={clearSearch}
-               className="absolute right-4 top-1/2 -translate-y-1/2 bg-slate-200 text-slate-500 rounded-full w-10 h-10 flex items-center justify-center hover:bg-slate-300 transition-colors"
-             >
-               <X size={24} strokeWidth={3} />
-             </button>
-           )}
-        </div>
+      {/* Main Content: Split Layout */}
+      <div className="flex flex-col md:flex-row gap-6 flex-1 min-h-0">
+         
+         {/* Left: Map/Tiles */}
+         <div className="flex-1 bg-white rounded-[2rem] border-4 border-[#e8dcb9] shadow-lg flex flex-col overflow-hidden">
+            {/* City Tabs */}
+            <div className="flex border-b-2 border-[#e8dcb9] bg-[#fbf8e6]">
+               {(['高雄市', '台南市', '屏東縣'] as City[]).map(city => (
+                  <button 
+                    key={city}
+                    onClick={() => setActiveCity(city)}
+                    className={`flex-1 py-4 font-black text-lg transition-colors ${activeCity === city ? 'bg-white text-[#5d4a36] shadow-[0_4px_0_white]' : 'text-[#b59a7a] hover:bg-[#fffdf5]'}`}
+                  >
+                    {city}
+                  </button>
+               ))}
+            </div>
+            
+            {/* Tile Grid */}
+            <div className="flex-1 p-6 overflow-y-auto bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]">
+                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3 auto-rows-[80px]">
+                   {mapData[activeCity]?.length === 0 ? (
+                       <div className="col-span-full py-20 text-center text-slate-300 font-bold">此區域尚未開拓領地</div>
+                   ) : (
+                       mapData[activeCity]?.map(d => (
+                           <button 
+                             key={d.name}
+                             onClick={() => setSelectedDistrict(d)}
+                             className={`rounded-2xl border-b-4 p-2 flex flex-col items-center justify-center transition-transform active:scale-95 shadow-sm hover:shadow-md ${getTileColor(d.count)} ${getTileSize(d.count)}`}
+                           >
+                              <div className="font-black text-sm md:text-base leading-tight">{d.name}</div>
+                              <div className="font-mono font-bold text-xs opacity-80">{d.count} 人</div>
+                           </button>
+                       ))
+                   )}
+                </div>
+            </div>
+         </div>
+
+         {/* Right: Info Panel */}
+         <div className="w-full md:w-80 bg-white rounded-[2rem] border-2 border-[#e8dcb9] shadow-sm flex flex-col shrink-0 h-[400px] md:h-auto">
+            {selectedDistrict ? (
+                <>
+                   <div className="p-5 border-b border-[#e8dcb9] bg-[#fffbf0] rounded-t-[1.8rem]">
+                      <div className="text-xs font-bold text-[#b59a7a] uppercase mb-1">SELECTED TERRITORY</div>
+                      <h2 className="text-3xl font-black text-[#5d4a36]">{selectedDistrict.name}</h2>
+                      <div className="flex items-center gap-2 mt-2">
+                         <span className="bg-[#78b833] text-white px-2 py-0.5 rounded text-xs font-bold">{selectedDistrict.count} 位村民</span>
+                         <span className="text-xs text-slate-400 font-bold">{activeCity}</span>
+                      </div>
+                   </div>
+                   <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                      {selectedDistrict.customers.map(c => (
+                          <div 
+                            key={c.customer_id}
+                            onClick={() => setViewingCustomerId(c.customer_id)}
+                            className="bg-white border-2 border-slate-100 p-3 rounded-xl cursor-pointer hover:border-[#78b833] hover:bg-[#f0fdf4] transition-all group"
+                          >
+                             <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-xl shadow-inner group-hover:bg-white">
+                                   {c.avatar === 'woman' ? '👩' : '👨'}
+                                </div>
+                                <div className="min-w-0">
+                                   <div className="font-black text-[#5d4a36] truncate">{c.displayName}</div>
+                                   <div className="text-xs text-slate-400 font-mono truncate">{c.phones[0]?.number}</div>
+                                </div>
+                                <ChevronRight className="ml-auto text-slate-300 group-hover:text-[#78b833]" size={16}/>
+                             </div>
+                          </div>
+                      ))}
+                   </div>
+                </>
+            ) : (
+                <div className="flex-1 flex flex-col items-center justify-center text-slate-300 p-8 text-center">
+                   <MapPin size={48} className="mb-4 opacity-50"/>
+                   <p className="font-bold">點擊左側地圖區塊<br/>查看領地詳情</p>
+                </div>
+            )}
+         </div>
+
       </div>
 
-      {/* Dynamic Content Area */}
-      <div className="flex-1 transition-all duration-300">
-        {searchState === 'IDLE' && (
-          <div className="flex flex-col items-center justify-center h-40 opacity-40">
-            <Tent size={60} className="text-[#e8dcb9] mb-4" />
-            <p className="text-[#d6cbb6] font-black text-lg">等待輸入...</p>
-          </div>
-        )}
-        
-        {searchState === 'FOUND' && renderFoundCard()}
-        {searchState === 'NOT_FOUND' && renderNotFoundCard()}
-      </div>
+      <CustomerDetailModal 
+        customerId={viewingCustomerId}
+        onClose={() => setViewingCustomerId(null)}
+      />
     </div>
   );
 };

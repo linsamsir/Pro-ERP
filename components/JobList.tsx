@@ -5,22 +5,26 @@ import { db } from '../services/db';
 import { auth } from '../services/auth';
 import ConfirmDialog from './ConfirmDialog';
 import { Plus, Search, FileText, Lock, Loader2, Trash2, Droplets, Wrench, AlertTriangle } from 'lucide-react';
+import CustomerDetailModal from './CustomerDetailModal';
 
 interface JobListProps {
   onAdd: () => void;
   onEdit: (job: Job) => void;
   onView: (job: Job) => void;
-  // [REFACTOR] Mandatory prop
-  onViewCustomer: (customerId: string) => void;
+  // [REFACTOR] Removed onViewCustomer
 }
 
-const JobList: React.FC<JobListProps> = ({ onAdd, onEdit, onView, onViewCustomer }) => {
+const JobList: React.FC<JobListProps> = ({ onAdd, onEdit, onView }) => {
   const [jobs, setJobs] = React.useState<Job[]>([]);
   const [customerMap, setCustomerMap] = React.useState<Record<string, Customer>>({});
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [searchTerm, setSearchTerm] = React.useState('');
   const [deleteId, setDeleteId] = React.useState<string | null>(null);
+  
+  // [REFACTOR] Local Modal State
+  const [viewingCustomerId, setViewingCustomerId] = React.useState<string | null>(null);
+  
   const canWrite = auth.canWrite();
 
   const fetchData = async () => {
@@ -73,20 +77,13 @@ const JobList: React.FC<JobListProps> = ({ onAdd, onEdit, onView, onViewCustomer
     }
   };
 
-  // [REFACTOR] Unified click handler for customers
+  // [REFACTOR] Unified click handler for customers - sets local state
   const handleCustomerClick = (e: React.MouseEvent, customerId: string) => {
     e.stopPropagation(); // Stop bubbling to job view
     console.log('[TRACE][JobList] Customer Click:', customerId);
     
-    if (!customerId) {
-        alert("資料錯誤：此任務未綁定 customerId");
-        return;
-    }
-    
-    if (onViewCustomer) {
-        onViewCustomer(customerId);
-    } else {
-        console.error('[TRACE][JobList] FATAL: onViewCustomer missing');
+    if (customerId) {
+        setViewingCustomerId(customerId);
     }
   };
 
@@ -224,6 +221,13 @@ const JobList: React.FC<JobListProps> = ({ onAdd, onEdit, onView, onViewCustomer
           ))}
         </div>
       )}
+      
+      {/* [REFACTOR] Self-contained Modal */}
+      <CustomerDetailModal 
+        customerId={viewingCustomerId} 
+        onClose={() => setViewingCustomerId(null)} 
+        // Note: Editing from Job List is currently disabled/redirects to list
+      />
     </div>
   );
 };

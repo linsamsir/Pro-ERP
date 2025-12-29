@@ -12,11 +12,10 @@ import BossDashboard from './components/BossDashboard';
 import AnalysisWorkspace from './components/AnalysisWorkspace';
 import Login from './components/Login';
 import Changelog from './components/Changelog';
-import { Customer, Job } from './types';
+import TodayMission from './components/TodayMission'; 
+import { Customer, Job, AppView } from './types';
 import { auth } from './services/auth';
 import { AlertTriangle } from 'lucide-react';
-
-type View = 'dashboard' | 'boss_dashboard' | 'analysis' | 'customers' | 'customer_add' | 'customer_edit' | 'jobs' | 'job_add' | 'job_edit' | 'job_view' | 'import' | 'changelog';
 
 // --- Decoy View for Admin ---
 const DecoyView = () => (
@@ -31,7 +30,8 @@ const DecoyView = () => (
 
 const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = React.useState(auth.isAuthenticated());
-  const [activeView, setActiveView] = React.useState<View>('boss_dashboard'); // Default to Boss Dashboard after login
+  // [MODIFIED] Default view is now 'today_mission'
+  const [activeView, setActiveView] = React.useState<AppView>('today_mission'); 
   const [selectedCustomer, setSelectedCustomer] = React.useState<Customer | undefined>();
   const [selectedJob, setSelectedJob] = React.useState<Job | undefined>();
   
@@ -40,105 +40,125 @@ const App: React.FC = () => {
   const [quickAddPhone, setQuickAddPhone] = React.useState('');
 
   React.useEffect(() => {
-    // Check auth on mount
-    setIsAuthenticated(auth.isAuthenticated());
+    auth.init((user) => {
+      setIsAuthenticated(!!user);
+    });
   }, []);
+
+  // [DEBUG] Monitor View Changes
+  React.useEffect(() => {
+    console.log(`[App] Current View Changed to: "${activeView}"`);
+  }, [activeView]);
 
   const handleLoginSuccess = () => {
     setIsAuthenticated(true);
-    setActiveView('boss_dashboard');
+    // [MODIFIED] Redirect to 'today_mission' after login
+    setActiveView('today_mission'); 
+  };
+
+  const handleNavigate = (view: AppView) => {
+    console.log('[App] Navigating to:', view);
+    setActiveView(view);
   };
 
   if (!isAuthenticated) {
     return <Login onLoginSuccess={handleLoginSuccess} />;
   }
 
-  // Handle Decoy
   const user = auth.getCurrentUser();
   if (user?.role === 'DECOY') {
     return <DecoyView />;
   }
 
   const renderContent = () => {
+    console.log('[App] Rendering Content Switch:', activeView);
+
     switch (activeView) {
-      case 'dashboard':
+      case 'dashboard': // Village Map
+        return <Dashboard />;
+        
+      case 'today_mission': // RPG Flow
         return (
-          <Dashboard 
-            onStartReport={(customer) => {
-              setSelectedCustomer(customer);
-              setActiveView('job_add');
-            }}
-            onAddCustomer={(phone) => {
-              setQuickAddPhone(phone);
-              setIsQuickAddModalOpen(true);
+          <TodayMission 
+            onStartJob={(job, customer) => {
+               console.log('[App] TodayMission started job:', job.jobId);
+               setSelectedJob(job);
+               setSelectedCustomer(customer);
+               handleNavigate('job_edit'); 
             }}
           />
         );
-      case 'boss_dashboard':
+        
+      case 'boss_dashboard': // Stats
         return <BossDashboard />;
+        
       case 'analysis':
         return <AnalysisWorkspace />;
+        
       case 'changelog':
         return <Changelog />;
+        
       case 'customers':
         return (
           <CustomerList 
-            onAdd={() => setActiveView('customer_add')} 
+            onAdd={() => handleNavigate('customer_add')} 
             onEdit={(c) => {
               setSelectedCustomer(c);
-              setActiveView('customer_edit');
-            }} 
+              handleNavigate('customer_edit');
+            }}
           />
         );
+        
       case 'customer_add':
         return (
           <CustomerForm 
-            onCancel={() => setActiveView('customers')} 
-            onSave={() => setActiveView('customers')} 
+            onCancel={() => handleNavigate('customers')} 
+            onSave={() => handleNavigate('customers')} 
           />
         );
+        
       case 'customer_edit':
         return (
           <CustomerForm 
             initialData={selectedCustomer}
             onCancel={() => {
               setSelectedCustomer(undefined);
-              setActiveView('customers');
+              handleNavigate('customers');
             }} 
             onSave={() => {
               setSelectedCustomer(undefined);
-              setActiveView('customers');
+              handleNavigate('customers');
             }} 
           />
         );
+        
       case 'jobs':
         return (
           <JobList 
-            onAdd={() => setActiveView('job_add')}
+            onAdd={() => handleNavigate('job_add')}
             onView={(job) => {
               setSelectedJob(job);
-              setActiveView('job_view');
+              handleNavigate('job_view');
             }}
             onEdit={(job) => {
               setSelectedJob(job);
-              setActiveView('job_edit');
+              handleNavigate('job_edit');
             }}
           />
         );
+        
       case 'job_view':
         return selectedJob ? (
           <JobDetail 
             job={selectedJob} 
             onBack={() => {
               setSelectedJob(undefined);
-              setActiveView('jobs');
+              handleNavigate('jobs');
             }}
-            onEdit={() => setActiveView('job_edit')}
+            onEdit={() => handleNavigate('job_edit')}
           />
-        ) : <Dashboard 
-            onStartReport={(c) => { setSelectedCustomer(c); setActiveView('job_add'); }} 
-            onAddCustomer={(p) => { setQuickAddPhone(p); setIsQuickAddModalOpen(true); }}
-          />;
+        ) : <Dashboard />;
+        
       case 'job_add':
       case 'job_edit':
         return (
@@ -147,31 +167,40 @@ const App: React.FC = () => {
             initialCustomer={activeView === 'job_add' ? selectedCustomer : undefined}
             onCancel={() => {
               if (activeView === 'job_edit') {
-                setActiveView('job_view');
+                handleNavigate('job_view'); 
               } else {
                 setSelectedJob(undefined);
                 setSelectedCustomer(undefined);
-                setActiveView('dashboard');
+                handleNavigate('dashboard');
               }
             }}
             onSave={(savedJob) => {
               setSelectedJob(savedJob);
-              setActiveView('job_view');
+              handleNavigate('job_view');
             }}
           />
         );
+        
       case 'import':
         return <ImportCenter />;
+        
       default:
-        return <BossDashboard />;
+        console.warn('[App] UNKNOWN VIEW KEY encountered:', activeView);
+        // Changed fallback to be distinct from BossDashboard to debug routing errors
+        return (
+            <div className="p-20 text-center flex flex-col items-center">
+                <h2 className="text-3xl font-black text-red-500 mb-4">404 - 迷路了？</h2>
+                <p className="text-slate-400 font-bold mb-8">找不到頁面: {activeView}</p>
+                <button onClick={() => handleNavigate('dashboard')} className="btn-primary">回到村莊地圖</button>
+            </div>
+        );
     }
   };
 
   return (
-    <Layout activeView={activeView} onNavigate={(v) => setActiveView(v as View)}>
+    <Layout activeView={activeView} onNavigate={handleNavigate}>
       {renderContent()}
       
-      {/* Floating Modal for Quick Customer Add */}
       {isQuickAddModalOpen && (
         <CustomerForm 
           mode="modal"
@@ -180,7 +209,7 @@ const App: React.FC = () => {
           onSave={(newCustomer) => {
             setIsQuickAddModalOpen(false);
             setSelectedCustomer(newCustomer);
-            setActiveView('job_add');
+            handleNavigate('job_add');
           }}
         />
       )}

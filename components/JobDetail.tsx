@@ -4,6 +4,7 @@ import { Job, Customer, JobStatus, ServiceItem, AvatarType } from '../types';
 import { db } from '../services/db';
 import { auth } from '../services/auth';
 import ConfirmDialog from './ConfirmDialog';
+import CustomerDetailModal from './CustomerDetailModal';
 import { 
   ArrowLeft, Edit3, Calendar, Clock, MapPin, Phone, 
   Wrench, Beaker, DollarSign, FileText, Building2, CheckCircle2, User, Share2, Printer, Zap, ArrowRight, Trash2, Car, Droplets, Tag, CreditCard, Receipt, Waves, AlertCircle
@@ -13,14 +14,16 @@ interface JobDetailProps {
   job: Job;
   onBack: () => void;
   onEdit: () => void;
-  // [REFACTOR] Mandatory
-  onViewCustomer: (customerId: string) => void;
+  // [REFACTOR] Removed onViewCustomer
 }
 
-const JobDetail: React.FC<JobDetailProps> = ({ job, onBack, onEdit, onViewCustomer }) => {
+const JobDetail: React.FC<JobDetailProps> = ({ job, onBack, onEdit }) => {
   const [customer, setCustomer] = React.useState<Customer | undefined>();
   const canWrite = auth.canWrite();
   const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false);
+  
+  // [REFACTOR] Local Modal State
+  const [viewingCustomerId, setViewingCustomerId] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     const fetchCustomer = async () => {
@@ -49,15 +52,8 @@ const JobDetail: React.FC<JobDetailProps> = ({ job, onBack, onEdit, onViewCustom
   const handleViewProfile = () => {
     console.log('[TRACE][JobDetail] Profile Clicked', job.customerId);
     
-    if (!job.customerId) {
-        alert("此任務尚未綁定村民 (No customerId)");
-        return;
-    }
-
-    if (onViewCustomer) {
-      onViewCustomer(job.customerId);
-    } else {
-      console.error('[TRACE][JobDetail] onViewCustomer missing');
+    if (job.customerId) {
+        setViewingCustomerId(job.customerId);
     }
   };
 
@@ -168,8 +164,7 @@ const JobDetail: React.FC<JobDetailProps> = ({ job, onBack, onEdit, onViewCustom
           </div>
         </div>
 
-        {/* ... Rest of the detail view remains same, but wrapping with React Fragment to ensure valid XML return if I were omitting ... */}
-        {/* For this response I will include the full content to be safe as per instructions */}
+        {/* ... Rest of the detail view ... */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-stretch">
            <div className={`ac-bubble p-6 bg-white h-full ${!job.serviceItems.includes(ServiceItem.TANK) ? 'opacity-50 grayscale' : ''}`}>
               <h4 className="text-sm font-black text-[#5d4a36] mb-4 flex items-center gap-2">
@@ -293,6 +288,12 @@ const JobDetail: React.FC<JobDetailProps> = ({ job, onBack, onEdit, onViewCustom
           </div>
         </div>
       </div>
+
+      {/* [REFACTOR] Self-contained Modal */}
+      <CustomerDetailModal 
+        customerId={viewingCustomerId} 
+        onClose={() => setViewingCustomerId(null)} 
+      />
     </div>
   );
 };
