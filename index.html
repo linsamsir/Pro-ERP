@@ -10,13 +10,13 @@
   
   <!-- 1. Process Polyfill for Vercel/Browser Environment -->
   <script>
-    window.process = window.process || { env: { 
-      API_KEY: '',
-      // 設定你提供的 Google Apps Script 網址
-      VITE_BACKUP_WEBAPP_URL: 'https://script.google.com/macros/s/AKfycbz-VK1ETwnWCTw-q4adt5uVH5nTTueXCXP_SrbZxrI8gkztPx2MAkLyQf151_aYc2eOWw/exec',
-      // 設定一個自訂的通關密語 (需與 Google Script 內的 EXPECTED_TOKEN 一致)
-      VITE_BACKUP_TOKEN: 'cleaning-village-888' 
-    } };
+    window.process = window.process || {};
+    window.process.env = window.process.env || {};
+    
+    // Explicitly set the variables required by backupService
+    window.process.env.VITE_BACKUP_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbz-VK1ETwnWCTw-q4adt5uVH5nTTueXCXP_SrbZxrI8gkztPx2MAkLyQf151_aYc2eOWw/exec';
+    window.process.env.VITE_BACKUP_TOKEN = 'cleaning-village-888';
+    window.process.env.API_KEY = ''; // Leave empty if managed by build tools, or fill for local dev
   </script>
 
   <style>

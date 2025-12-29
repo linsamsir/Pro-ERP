@@ -1,7 +1,7 @@
 
 import { db } from './db';
 
-// Configuration Retrieval Helper
+// Helper: Get Environment Variable at Runtime
 const getEnv = (key: string): string => {
   // 1. Try Vite import.meta.env
   // @ts-ignore
@@ -15,16 +15,9 @@ const getEnv = (key: string): string => {
     // @ts-ignore
     return window.process.env[key];
   }
-  // 3. Try global process (Node/Build)
-  try {
-    if (process.env[key]) return process.env[key]!;
-  } catch (e) {}
-
   return '';
 };
 
-const BACKUP_API_URL = getEnv('VITE_BACKUP_WEBAPP_URL'); 
-const BACKUP_TOKEN = getEnv('VITE_BACKUP_TOKEN') || 'default-token';
 const CHUNK_SIZE = 50; 
 
 export type BackupStatus = 'IDLE' | 'FETCHING' | 'UPLOADING' | 'COMPLETED' | 'ERROR';
@@ -66,13 +59,18 @@ const flattenObject = (obj: any): Record<string, any> => {
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 export const BackupService = {
-  checkConfig: () => {
-    // Re-check at runtime
+  checkConfig: (): { url: string, token: string } => {
+    // Read at runtime to ensure env is ready
     const url = getEnv('VITE_BACKUP_WEBAPP_URL');
+    const token = getEnv('VITE_BACKUP_TOKEN');
+
     if (!url) throw new Error("尚未設定 VITE_BACKUP_WEBAPP_URL");
     if (!url.startsWith('https://script.google.com')) throw new Error("無效的 Google Script 網址");
-    if (!BACKUP_TOKEN) throw new Error("尚未設定 VITE_BACKUP_TOKEN");
-    return url;
+    
+    // Strict Token Check - No fallback
+    if (!token) throw new Error("尚未設定 VITE_BACKUP_TOKEN (請檢查 index.html 設定)");
+    
+    return { url, token };
   },
 
   fetchAllData: async () => {
@@ -95,7 +93,7 @@ export const BackupService = {
   },
 
   uploadChunk: async (collectionName: string, data: any[], isFirstChunk: boolean, retryCount = 0): Promise<any> => {
-    const baseUrl = BackupService.checkConfig();
+    const { url: baseUrl, token } = BackupService.checkConfig();
     const MAX_RETRIES = 3;
     
     // Append timestamp to avoid caching issues
@@ -105,61 +103,67 @@ export const BackupService = {
       collection: collectionName,
       data: data.map(flattenObject), // Serialize for Sheet
       isFirstChunk,
-      token: BACKUP_TOKEN
+      token: token // Send the configured token
     };
 
     try {
-      // GAS requires following redirects (302) to get the actual response
+      if (retryCount === 0) {
+         // console.log(`[Backup] Sending ${collectionName} chunk...`);
+      }
+
+      // ⭐ CRITICAL CONFIGURATION for "Anyone" Access:
+      // 1. mode: 'cors' (Default) allows us to read response status/text.
+      // 2. credentials: 'omit' is ESSENTIAL to prevent Google sending cookies which triggers 302 login redirects.
+      // 3. redirect: 'follow' allows following the GAS 302 redirect to the actual content result.
       const response = await fetch(url, {
         method: 'POST',
+        credentials: 'omit', 
+        redirect: 'follow',
         headers: {
-          'Content-Type': 'text/plain;charset=utf-8' // Prevent CORS preflight
+          'Content-Type': 'text/plain;charset=utf-8', 
         },
         body: JSON.stringify(payload)
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP Error: ${response.status} ${response.statusText}`);
-      }
+        const text = await response.text();
+        console.error(`[Backup Error] Status: ${response.status}`, text.substring(0, 200));
 
-      const text = await response.text();
-      let result;
-      try {
-        result = JSON.parse(text);
-      } catch (e) {
-        console.error("Backup Raw Response:", text);
-        // If we get HTML back (often Google login page or error page), throw specific error
-        if (text.includes('<!DOCTYPE html>')) {
-             throw new Error("收到 HTML 回應而非 JSON。這通常代表：\n1. Google Script 權限未設為 'Anyone'\n2. 瀏覽器擋住了重新導向");
+        if (response.status === 401) {
+            throw new Error(`Unauthorized (401)：VITE_BACKUP_TOKEN (${token.substring(0,3)}***) 與 GAS 端不一致。`);
         }
-        throw new Error(`Google Script 回傳了無效的格式: ${text.substring(0, 50)}...`);
+        
+        // Google often returns HTML for 404/403/NeedPermission pages
+        if (text.trim().startsWith('<!DOCTYPE html>') || text.includes('Google Accounts')) {
+            throw new Error("收到 HTML 回應，多半是部署權限/導向問題。\n請確認 Script 部署為「任何人 (Anyone)」");
+        }
+
+        throw new Error(`上傳失敗 (${response.status}): ${text.substring(0, 100)}`);
       }
 
-      if (result.status !== 'success') {
-        throw new Error(result.message || 'Unknown GAS Error');
-      }
-      return result;
+      // Success Logging
+      console.log(`[Backup] Success: ${collectionName} chunk (${data.length} items, first:${isFirstChunk}). Token: ${token.substring(0,4)}***`);
+      
+      return { status: 'success' };
 
     } catch (error: any) {
         console.error(`Upload Chunk Failed (Attempt ${retryCount + 1}/${MAX_RETRIES + 1}):`, error);
         
-        // Retry Logic for Network Errors
-        if (retryCount < MAX_RETRIES) {
+        // Handle "Failed to fetch" which is often a hidden 401/CORS error from Google if config is slightly off
+        if (error.message === 'Failed to fetch' || error.message.includes('NetworkError')) {
+             if (retryCount >= MAX_RETRIES) {
+                 throw new Error("無法連線 (Failed to fetch)。\n請確認：\n1. 部署權限是否為「任何人 (Anyone)」\n2. 網址是否正確\n3. 網路連線正常");
+             }
+        }
+
+        // Retry Logic only for network/fetch errors, not logic errors
+        if (retryCount < MAX_RETRIES && !error.message.includes('Unauthorized') && !error.message.includes('HTML')) {
             const delay = 2000 * Math.pow(2, retryCount); 
             console.log(`Retrying in ${delay}ms...`);
             await sleep(delay);
             return BackupService.uploadChunk(collectionName, data, isFirstChunk, retryCount + 1);
         }
 
-        if (error.message.includes('Failed to fetch')) {
-            throw new Error(
-                "連線失敗 (Failed to fetch)。\n" +
-                "請依序檢查：\n" +
-                "1. Google Script 部署權限是否設為「Anyone (任何人)」(最常見原因)\n" +
-                "2. 您的瀏覽器是否安裝了阻擋廣告或 CORS 的擴充功能\n" +
-                "3. 嘗試使用無痕模式 (Incognito) 測試"
-            );
-        }
         throw error;
     }
   },
@@ -202,6 +206,9 @@ export const BackupService = {
           
           await BackupService.uploadChunk(task.name, chunk, isFirst);
           
+          // Add small delay to prevent overwhelming GAS concurrent limits
+          await sleep(500); 
+          
           const progress = Math.round(((i + chunk.length) / total) * 100);
           onProgress({ 
             collection: task.name, 
@@ -216,7 +223,8 @@ export const BackupService = {
       }
 
     } catch (error: any) {
-      console.error("Backup Failed", error);
+      console.error("Backup Failed Stop", error);
+      // Ensure the error propagates to UI and stops the loop
       throw error;
     }
   }

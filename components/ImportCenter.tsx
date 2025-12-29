@@ -3,7 +3,7 @@ import React from 'react';
 import { db } from '../services/db';
 import { BackupService, BackupLog } from '../services/backupService';
 import { BuildingType, Preference, ServiceItem, JobStatus, Job, Customer } from '../types';
-import { Clipboard, Loader2, ShieldCheck, Database, CheckCircle2, FileSpreadsheet, UserPlus, History, ArrowDown, CloudRain, Save, AlertTriangle, Play } from 'lucide-react';
+import { Clipboard, Loader2, ShieldCheck, Database, CheckCircle2, FileSpreadsheet, UserPlus, History, ArrowDown, CloudRain, Save, AlertTriangle, Play, HelpCircle, Link as LinkIcon, Server } from 'lucide-react';
 
 const ImportCenter: React.FC = () => {
   const [activeTab, setActiveTab] = React.useState<'new' | 'returning' | 'backup'>('new');
@@ -18,12 +18,15 @@ const ImportCenter: React.FC = () => {
   const [isBackingUp, setIsBackingUp] = React.useState(false);
   const [backupError, setBackupError] = React.useState<string | null>(null);
   const [backupConfigured, setBackupConfigured] = React.useState(false);
+  const [backupSuccess, setBackupSuccess] = React.useState(false);
+  const [scriptUrl, setScriptUrl] = React.useState('');
 
   React.useEffect(() => {
     // Check if backup is configured
     try {
-        BackupService.checkConfig();
+        const { url } = BackupService.checkConfig();
         setBackupConfigured(true);
+        setScriptUrl(url);
     } catch {
         setBackupConfigured(false);
     }
@@ -206,7 +209,8 @@ const ImportCenter: React.FC = () => {
   const handleBackup = async () => {
     setIsBackingUp(true);
     setBackupError(null);
-    setBackupLogs({}); // Clear previous
+    setBackupSuccess(false);
+    setBackupLogs({}); // Clear previous logs
 
     try {
         await BackupService.runBackup((log) => {
@@ -215,8 +219,24 @@ const ImportCenter: React.FC = () => {
                 [log.collection]: log
             }));
         });
+        setBackupSuccess(true);
     } catch (e: any) {
-        setBackupError(e.message || '備份過程發生錯誤');
+        console.error("Backup UI Caught Error:", e);
+        setBackupError(e.message || '備份過程發生未知錯誤');
+        
+        // Mark the last active log as ERROR in UI
+        setBackupLogs(prev => {
+            const newState = { ...prev };
+            const activeKey = Object.keys(newState).find(k => newState[k].status === 'UPLOADING');
+            if (activeKey) {
+                newState[activeKey] = {
+                    ...newState[activeKey],
+                    status: 'ERROR',
+                    message: '上傳中斷'
+                };
+            }
+            return newState;
+        });
     } finally {
         setIsBackingUp(false);
     }
@@ -300,16 +320,22 @@ const ImportCenter: React.FC = () => {
                  </div>
                  <div className="flex-1">
                      <h3 className="text-2xl font-black text-[#5d4a36]">一鍵備份到 Google Sheet</h3>
-                     <p className="text-[#b59a7a] font-bold mt-1">將村莊的所有紀錄同步到雲端試算表，確保資料安全。</p>
+                     <p className="text-[#b59a7a] font-bold mt-1">將系統資料單向同步到 Google 試算表。</p>
                  </div>
              </div>
 
-             {!backupConfigured && (
+             {/* Config Status - Only show red if not configured, else green */}
+             {backupConfigured ? (
+                 <div className="bg-green-50 p-3 rounded-xl border border-green-200 text-green-700 font-bold flex items-center gap-2 mb-6 text-sm">
+                     <Server size={16}/> 
+                     <span className="truncate">備份伺服器已連線 ({scriptUrl.substring(0, 30)}...)</span>
+                 </div>
+             ) : (
                  <div className="bg-red-50 p-4 rounded-xl border border-red-200 text-red-600 font-bold flex items-center gap-3 mb-6">
                      <AlertTriangle size={24}/>
                      <div>
                         尚未設定備份伺服器 (VITE_BACKUP_WEBAPP_URL)。<br/>
-                        <span className="text-xs font-normal">請聯繫系統管理員進行設定。</span>
+                        <span className="text-xs font-normal">請檢查 index.html 設定。</span>
                      </div>
                  </div>
              )}
@@ -323,8 +349,30 @@ const ImportCenter: React.FC = () => {
              </div>
 
              {backupError && (
-                <div className="bg-red-50 p-4 rounded-xl border border-red-200 text-red-600 font-bold mb-6 text-center animate-bounce">
-                    {backupError}
+                <div className="space-y-4 mb-6">
+                    <div className="bg-red-50 p-4 rounded-xl border border-red-200 text-red-600 font-bold text-center animate-bounce whitespace-pre-wrap text-left text-sm">
+                        {backupError}
+                    </div>
+                    {/* Show troubleshooting only when error happens */}
+                    <div className="bg-orange-50 border-l-4 border-orange-400 p-4 rounded-r-xl">
+                       <div className="flex gap-2">
+                         <HelpCircle className="text-orange-500 shrink-0" size={20}/>
+                         <div>
+                           <p className="font-bold text-orange-700 text-sm">疑難排解建議</p>
+                           <p className="text-xs text-orange-600 mt-1 leading-relaxed">
+                             1. 請確認 Apps Script 部署權限是否設為 <strong>「任何人 (Anyone)」</strong>。<br/>
+                             2. 企業 Workspace 帳號可能無法選擇「任何人」，請改用私人 Gmail。<br/>
+                             3. 確認 index.html 中的 <code>VITE_BACKUP_TOKEN</code> 與 Script 內一致。
+                           </p>
+                         </div>
+                       </div>
+                    </div>
+                </div>
+             )}
+
+             {backupSuccess && !backupError && (
+                <div className="bg-green-50 p-4 rounded-xl border border-green-200 text-green-600 font-bold mb-6 text-center animate-in fade-in flex items-center justify-center gap-2">
+                    <CheckCircle2 size={24}/> 備份完成！資料已寫入試算表。
                 </div>
              )}
 
@@ -341,6 +389,7 @@ const ImportCenter: React.FC = () => {
           </div>
       ) : (
           <div className="ac-card p-8 bg-white">
+            {/* ... Existing Import UI ... */}
             <div className="space-y-6">
               <div className="flex items-center gap-3 text-[#5d4a36] font-black">
                 <div className="bg-[#fdfaf0] border-2 border-[#eeeada] p-3 rounded-xl text-[#b59a7a]">
