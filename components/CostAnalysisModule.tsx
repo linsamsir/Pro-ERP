@@ -7,7 +7,7 @@ import { DEFAULT_ASSETS } from '../data/defaultAssets'; // Import seed
 import { X, PieChart, Package, Truck, HardHat, Receipt, Trash2, Plus, Calendar, Download, ChevronLeft, ChevronRight, AlertCircle, Import } from 'lucide-react';
 
 interface CostAnalysisModuleProps {
-  onClose: () => void;
+  onClose?: () => void; // Optional if not used as modal anymore
 }
 
 type SubTab = 'overview' | 'assets' | 'stock' | 'labor';
@@ -84,13 +84,14 @@ const CostAnalysisModule: React.FC<CostAnalysisModuleProps> = ({ onClose }) => {
     refreshData();
   };
 
-  // Import Default Assets Logic - IDEMPOTENT
+  // Import Default Assets Logic - IDEMPOTENT Check
   const handleImportDefaults = async () => {
     if (!confirm("確定要匯入預設施工設備清單？(重複的項目將自動跳過)")) return;
     
     let count = 0;
+    // We iterate the seed list and check against current assets
     for (const def of DEFAULT_ASSETS) {
-      // Check duplicate by name and category (stronger check)
+      // Check duplicate by name (stronger check: name + category)
       const exists = assets.some(a => 
         a.name === def.name && 
         a.category === def.category &&
@@ -113,8 +114,13 @@ const CostAnalysisModule: React.FC<CostAnalysisModuleProps> = ({ onClose }) => {
         count++;
       }
     }
-    alert(`匯入完成！新增了 ${count} 項設備。請記得去編輯「購入金額」。`);
-    refreshData();
+    
+    if (count === 0) {
+      alert("所有預設設備皆已存在，未新增任何項目。");
+    } else {
+      alert(`匯入完成！新增了 ${count} 項設備。請記得去編輯「購入金額」。`);
+      refreshData();
+    }
   };
 
   const handleAddStock = async () => {
@@ -155,7 +161,14 @@ const CostAnalysisModule: React.FC<CostAnalysisModuleProps> = ({ onClose }) => {
         <h2 className="text-2xl font-black text-[#5d4a36] flex items-center gap-3">
           <PieChart className="text-[#78b833]" /> 營運成本模組 (Level 2)
         </h2>
-        <button onClick={onClose} className="p-2 bg-slate-100 rounded-full hover:bg-slate-200"><X size={24} /></button>
+        <div className="flex items-center gap-2">
+           {activeTab === 'assets' && (
+             <button onClick={handleImportDefaults} className="bg-blue-50 text-blue-600 border-blue-100 border-2 px-3 py-2 rounded-xl flex items-center gap-1 font-bold text-xs hover:bg-blue-100 shadow-sm active:translate-y-1 transition-all mr-2">
+                <Import size={16}/> 預設設備
+             </button>
+           )}
+           {onClose && <button onClick={onClose} className="p-2 bg-slate-100 rounded-full hover:bg-slate-200"><X size={24} /></button>}
+        </div>
       </div>
 
       <div className="max-w-6xl mx-auto p-6 grid grid-cols-1 lg:grid-cols-4 gap-6">
@@ -255,12 +268,7 @@ const CostAnalysisModule: React.FC<CostAnalysisModuleProps> = ({ onClose }) => {
              <div className="space-y-4 animate-in fade-in">
                 <div className="flex justify-between items-center">
                    <h3 className="text-xl font-black text-[#5d4a36]">設備資產清冊</h3>
-                   <div className="flex gap-2">
-                     <button onClick={handleImportDefaults} className="bg-blue-50 text-blue-600 border-blue-100 border-2 px-4 py-2 rounded-xl flex items-center gap-1 font-bold text-sm hover:bg-blue-100">
-                        <Import size={16}/> 一鍵匯入預設備品
-                     </button>
-                     <button onClick={() => setShowAssetForm(!showAssetForm)} className="ac-btn-green px-4 py-2 flex items-center gap-1 text-sm"><Plus size={16}/> 新增資產</button>
-                   </div>
+                   <button onClick={() => setShowAssetForm(!showAssetForm)} className="ac-btn-green px-4 py-2 flex items-center gap-1 text-sm"><Plus size={16}/> 新增資產</button>
                 </div>
                 
                 {showAssetForm && (

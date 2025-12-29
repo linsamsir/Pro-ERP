@@ -5,11 +5,8 @@ import { Expense } from '../types';
 import { auth } from '../services/auth';
 import { X, Search, Trash2, Calendar, DollarSign, ArrowLeft, ArrowRight, Tag, Wallet, Plus, AlertCircle, Save } from 'lucide-react';
 
-interface ExpenseManagerProps {
-  onClose: () => void;
-}
-
-const ExpenseManager: React.FC<ExpenseManagerProps> = ({ onClose }) => {
+// Removed onClose prop as this is now a full page
+const ExpenseManager: React.FC = () => {
   const [expenses, setExpenses] = React.useState<Expense[]>([]);
   const [filtered, setFiltered] = React.useState<Expense[]>([]);
   const [currentDate, setCurrentDate] = React.useState(new Date());
@@ -110,17 +107,21 @@ const ExpenseManager: React.FC<ExpenseManagerProps> = ({ onClose }) => {
   const totalCashflow = filtered.filter(e => e.cashflowOnly).reduce((s, e) => s + e.amount, 0);
 
   return (
-    // FIX: Layout Constraint - Use md:left-72 to respect sidebar on desktop, inset-0 on mobile
-    <div className="fixed inset-0 md:left-72 z-[60] bg-[#fbf8e6] overflow-auto animate-in slide-in-from-right-10 shadow-2xl">
-      <div className="sticky top-0 bg-[#fffbf0]/95 backdrop-blur-sm p-4 border-b-2 border-[#e8dcb9] flex justify-between items-center z-10 shadow-sm">
-        <h2 className="text-2xl font-black text-[#5d4a36] flex items-center gap-3">
-          <Wallet className="text-[#78b833]" /> 支出管理簿
-        </h2>
-        <button onClick={onClose} className="p-2 bg-slate-100 rounded-full hover:bg-slate-200"><X size={24} /></button>
+    // FIX: Layout to be a normal page flow, not fixed overlay
+    <div className="min-h-full animate-pop p-4 md:p-10 max-w-7xl mx-auto space-y-8">
+      {/* Header */}
+      <div className="flex justify-between items-center border-b-2 border-[#e8dcb9] pb-6">
+        <div>
+          <h1 className="text-h1 flex items-center gap-3">
+            <Wallet className="text-[#78b833]" size={36} /> 支出管理簿
+          </h1>
+          <p className="text-note font-bold mt-2 ml-1">
+            記錄村莊營運的每一筆開銷
+          </p>
+        </div>
       </div>
 
-      <div className="max-w-4xl mx-auto p-6 space-y-6">
-        
+      <div className="space-y-6">
         {/* Controls */}
         <div className="flex flex-col md:flex-row justify-between gap-4">
            <div className="flex items-center gap-2 bg-white p-1 rounded-xl border border-[#e8dcb9] shadow-sm self-start">
@@ -150,20 +151,20 @@ const ExpenseManager: React.FC<ExpenseManagerProps> = ({ onClose }) => {
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-2 gap-4">
-           <div className="bg-white p-4 rounded-2xl border-l-4 border-l-red-400 shadow-sm">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+           <div className="bg-white p-6 rounded-2xl border-l-8 border-l-red-400 shadow-sm">
               <div className="text-xs font-bold text-slate-400 mb-1">本月損益支出</div>
-              <div className="text-2xl font-black text-red-500">${totalAmount.toLocaleString()}</div>
-              <div className="text-[10px] text-slate-400 mt-1">計入淨利計算</div>
+              <div className="text-4xl font-black text-red-500">${totalAmount.toLocaleString()}</div>
+              <div className="text-xs text-slate-400 mt-2 font-bold flex items-center gap-1"><AlertCircle size={12}/> 計入淨利計算</div>
            </div>
-           <div className="bg-white p-4 rounded-2xl border-l-4 border-l-slate-400 shadow-sm">
+           <div className="bg-white p-6 rounded-2xl border-l-8 border-l-slate-400 shadow-sm">
               <div className="text-xs font-bold text-slate-400 mb-1">純現金流支出 (薪資/提領)</div>
-              <div className="text-2xl font-black text-slate-600">${totalCashflow.toLocaleString()}</div>
-              <div className="text-[10px] text-slate-400 mt-1">不影響損益，僅供記帳</div>
+              <div className="text-4xl font-black text-slate-600">${totalCashflow.toLocaleString()}</div>
+              <div className="text-xs text-slate-400 mt-2 font-bold">不影響損益，僅供記帳</div>
            </div>
         </div>
 
-        {/* Add Form */}
+        {/* Add Form (Inline Modal inside page) */}
         {isAdding && (
           <div className="bg-white p-6 rounded-2xl border-2 border-[#78b833] shadow-lg animate-in fade-in slide-in-from-top-4">
              <div className="flex justify-between items-center mb-4">

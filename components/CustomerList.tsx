@@ -1,23 +1,21 @@
 
 import React from 'react';
-import { Customer, AvatarType, Job, JobStatus } from '../types';
+import { Customer, AvatarType } from '../types';
 import { db } from '../services/db';
 import { auth } from '../services/auth';
-import ConfirmDialog from './ConfirmDialog';
-import { Plus, Search, MapPin, Phone, User, Edit3, Trash2, ChevronRight, Tag, History, Lock, Loader2, AlertTriangle } from 'lucide-react';
+import { Plus, Search, MapPin, Phone, User, Lock, Loader2, AlertTriangle, History } from 'lucide-react';
 
 interface CustomerListProps {
   onAdd: () => void;
   onEdit: (c: Customer) => void;
+  onViewCustomer?: (c: Customer) => void;
 }
 
-const CustomerList: React.FC<CustomerListProps> = ({ onAdd, onEdit }) => {
+const CustomerList: React.FC<CustomerListProps> = ({ onAdd, onEdit, onViewCustomer }) => {
   const [customers, setCustomers] = React.useState<Customer[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [searchTerm, setSearchTerm] = React.useState('');
-  const [viewingCustomer, setViewingCustomer] = React.useState<Customer | null>(null);
-  const [deleteId, setDeleteId] = React.useState<string | null>(null);
   
   const canWrite = auth.canWrite();
 
@@ -36,23 +34,12 @@ const CustomerList: React.FC<CustomerListProps> = ({ onAdd, onEdit }) => {
   };
 
   React.useEffect(() => {
-    // Debounce search
     const timer = setTimeout(() => {
         fetchData();
     }, 500);
     return () => clearTimeout(timer);
   }, [searchTerm]);
 
-  const handleDelete = async () => {
-    if (deleteId) {
-      await db.customers.delete(deleteId);
-      await fetchData();
-      setViewingCustomer(null);
-      setDeleteId(null);
-    }
-  };
-
-  // Helper Wrappers
   const getPrimaryPhone = (c: Customer) => {
     const raw = c.phones?.find(p => p.isPrimary)?.number || c.phones?.[0]?.number || '無電話';
     return auth.maskSensitiveData(raw, 'phone');
@@ -81,50 +68,16 @@ const CustomerList: React.FC<CustomerListProps> = ({ onAdd, onEdit }) => {
     return <div className={containerClass}>{info.icon}</div>;
   };
 
+  const handleCardClick = (c: Customer) => {
+    if (onViewCustomer) {
+      onViewCustomer(c);
+    } else {
+      console.warn("onViewCustomer prop missing in CustomerList");
+    }
+  };
+
   return (
     <div className="space-y-8 px-4">
-      <ConfirmDialog 
-        isOpen={!!deleteId}
-        title="確認刪除村民？"
-        message="這位村民的資料將被移至垃圾桶，但可透過變更紀錄查詢。此操作無法直接還原。"
-        isDanger
-        confirmText="確認刪除"
-        onConfirm={handleDelete}
-        onCancel={() => setDeleteId(null)}
-      />
-
-      {/* Viewing Customer Modal (Simplified for brevity) */}
-      {viewingCustomer && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-          <div className="ac-bubble bg-white w-full max-w-lg p-6 relative animate-in zoom-in-95">
-             <button onClick={() => setViewingCustomer(null)} className="absolute top-4 right-4 p-2">✕</button>
-             <div className="flex gap-4 mb-6">
-                {renderAvatar(viewingCustomer, 'lg')}
-                <div>
-                   <h2 className="text-2xl font-black">{viewingCustomer.displayName}</h2>
-                   <p className="text-slate-400">{viewingCustomer.customer_id}</p>
-                </div>
-             </div>
-             <div className="space-y-4">
-                <div className="p-4 bg-slate-50 rounded-xl">
-                   <div className="text-xs text-slate-400 font-bold uppercase mb-1">主要電話</div>
-                   <div className="text-xl font-black text-[#5d4a36]">{getPrimaryPhone(viewingCustomer)}</div>
-                </div>
-                <div className="p-4 bg-slate-50 rounded-xl">
-                   <div className="text-xs text-slate-400 font-bold uppercase mb-1">地址</div>
-                   <div className="text-lg font-bold text-[#5d4a36]">{getPrimaryAddress(viewingCustomer)}</div>
-                </div>
-             </div>
-             {canWrite && (
-                <div className="flex gap-3 mt-6">
-                   <button onClick={() => onEdit(viewingCustomer)} className="flex-1 ac-btn-green py-3 justify-center">修改</button>
-                   <button onClick={() => setDeleteId(viewingCustomer.customer_id)} className="p-3 bg-red-100 text-red-500 rounded-xl"><Trash2/></button>
-                </div>
-             )}
-          </div>
-        </div>
-      )}
-
       {/* Main List View */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <h2 className="text-4xl font-black text-[#5d4a36] flex items-center gap-3">
@@ -175,7 +128,11 @@ const CustomerList: React.FC<CustomerListProps> = ({ onAdd, onEdit }) => {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {customers.map(c => (
-            <div key={c.customer_id} onClick={() => setViewingCustomer(c)} className="ac-bubble p-6 hover:scale-[1.02] transition-all cursor-pointer group bg-white">
+            <div 
+              key={c.customer_id} 
+              onClick={() => handleCardClick(c)} 
+              className="ac-bubble p-6 hover:scale-[1.02] transition-all cursor-pointer group bg-white text-left w-full relative active:scale-[0.98]"
+            >
               <div className="flex justify-between items-start mb-4">
                 <div className="flex items-center gap-4">
                   {renderAvatar(c, 'sm')}
@@ -184,7 +141,7 @@ const CustomerList: React.FC<CustomerListProps> = ({ onAdd, onEdit }) => {
                     <div className="text-[9px] font-bold text-[#b59a7a] uppercase tracking-tighter">{c.customer_id}</div>
                   </div>
                 </div>
-                {/* Status Badges - RESTORED */}
+                {/* Status Badges */}
                 <div className="flex flex-col items-end gap-1">
                    {c.is_returning && (
                       <span className="text-[10px] font-black bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full flex items-center gap-1">
@@ -205,7 +162,7 @@ const CustomerList: React.FC<CustomerListProps> = ({ onAdd, onEdit }) => {
                 </div>
               </div>
               
-              {/* Tags Section - RESTORED */}
+              {/* Tags Section */}
               {c.ai_tags && c.ai_tags.length > 0 && (
                  <div className="flex gap-1 flex-wrap pt-2 border-t border-slate-100">
                     {c.ai_tags.slice(0, 3).map(t => (

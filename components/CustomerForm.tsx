@@ -3,7 +3,7 @@ import React from 'react';
 import { Customer, Preference, BuildingType, PhoneRecord, CustomerSource, SocialAccount, AvatarType } from '../types';
 import { db } from '../services/db';
 import { auth } from '../services/auth';
-import { Save, X, Plus, Trash2, User, Phone, MapPin, Share2, Search, Smile, Lock } from 'lucide-react';
+import { Save, X, Plus, Trash2, User, Phone, MapPin, Share2, Search, Smile, Lock, Wand2 } from 'lucide-react';
 
 interface CustomerFormProps {
   initialData?: Partial<Customer>;
@@ -13,7 +13,7 @@ interface CustomerFormProps {
 }
 
 const CustomerForm: React.FC<CustomerFormProps> = ({ initialData, onCancel, onSave, mode = 'page' }) => {
-  const isEditing = !!initialData?.customer_id;
+  const isEditing = !!initialData?.docId; // Use docId to check if editing
   
   // --- Local State ---
   const [c, setC] = React.useState<Partial<Customer>>({
@@ -120,6 +120,11 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ initialData, onCancel, onSa
     setShowReferrerInput(false);
   };
 
+  const handleAutoGenerateId = async () => {
+    const nextId = await db.customers.previewNextId();
+    update({ customer_id: nextId });
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -134,18 +139,28 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ initialData, onCancel, onSa
     const payload = {
       ...(c as Customer),
       displayName,
-      // Ensure timestamps
       updated_at: new Date().toISOString(),
     };
 
-    if (isEditing && c.customer_id) {
-       // Update existing
-       await db.customers.save(payload);
-       onSave(payload);
-    } else {
-       // Create new (Atomic ID)
-       const newCustomer = await db.customers.createWithAutoId(payload);
-       onSave(newCustomer);
+    try {
+        if (c.docId) {
+           // Update Existing via Doc ID
+           await db.customers.save(payload);
+           onSave(payload as Customer);
+        } else {
+           // Create New
+           if (c.customer_id) {
+             // Manual ID provided
+             await db.customers.save(payload as Customer);
+             onSave(payload as Customer);
+           } else {
+             // Fully Auto
+             const newCustomer = await db.customers.createWithAutoId(payload);
+             onSave(newCustomer);
+           }
+        }
+    } catch (e: any) {
+        alert(e.message || "儲存失敗");
     }
   };
 
@@ -182,12 +197,23 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ initialData, onCancel, onSa
 
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
           
-          {/* ID field - Simplified */}
-          <div className="bg-slate-100 p-3 rounded-xl border border-slate-200 flex items-center justify-between opacity-70">
-             <div className="text-xs font-bold text-slate-400 uppercase tracking-widest">Customer ID</div>
-             <div className="flex items-center gap-2 font-mono font-black text-[#5d4a36]">
-                <Lock size={14} className="text-slate-400"/>
-                {c.customer_id || "儲存後自動生成"}
+          {/* ID field - Editable with Suggest Button (Requirement B4) */}
+          <div className="bg-slate-100 p-3 rounded-xl border border-slate-200 flex items-center justify-between">
+             <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mr-2 shrink-0">Customer ID</div>
+             <div className="flex flex-1 items-center gap-2">
+                <input 
+                  className="bg-white border border-slate-300 rounded px-2 py-1 font-mono font-black text-[#5d4a36] w-full text-right outline-none focus:border-[#78b833]"
+                  placeholder="系統自動生成"
+                  value={c.customer_id || ''}
+                  onChange={e => update({ customer_id: e.target.value })}
+                />
+                <button 
+                  type="button" 
+                  onClick={handleAutoGenerateId}
+                  className="bg-[#78b833] text-white px-3 py-1 rounded text-xs font-bold flex items-center gap-1 hover:bg-[#5a8d26] shrink-0"
+                >
+                  <Wand2 size={12}/> 插入建議編號
+                </button>
              </div>
           </div>
 

@@ -12,8 +12,10 @@ import BossDashboard from './components/BossDashboard';
 import AnalysisWorkspace from './components/AnalysisWorkspace';
 import Login from './components/Login';
 import Changelog from './components/Changelog';
+import CustomerDetailModal from './components/CustomerDetailModal';
 import { Customer, Job } from './types';
 import { auth } from './services/auth';
+import { db } from './services/db';
 import { AlertTriangle, Loader2 } from 'lucide-react';
 
 type View = 'dashboard' | 'boss_dashboard' | 'analysis' | 'customers' | 'customer_add' | 'customer_edit' | 'jobs' | 'job_add' | 'job_edit' | 'job_view' | 'import' | 'changelog';
@@ -36,8 +38,12 @@ const App: React.FC = () => {
   const [selectedCustomer, setSelectedCustomer] = React.useState<Customer | undefined>();
   const [selectedJob, setSelectedJob] = React.useState<Job | undefined>();
   
+  // State for "Quick Add Customer" modal
   const [isQuickAddModalOpen, setIsQuickAddModalOpen] = React.useState(false);
   const [quickAddPhone, setQuickAddPhone] = React.useState('');
+
+  // Global Viewing Customer State (D1 Requirement)
+  const [viewingCustomer, setViewingCustomer] = React.useState<Customer | null>(null);
 
   React.useEffect(() => {
     auth.init((user) => {
@@ -65,6 +71,24 @@ const App: React.FC = () => {
     return <DecoyView />;
   }
 
+  // Helper to open customer detail from any view
+  const handleViewCustomer = async (customerId: string | Customer) => {
+    if (!customerId) return;
+
+    if (typeof customerId === 'object') {
+        // Passed full customer object
+        setViewingCustomer(customerId);
+        return;
+    }
+    
+    const c = await db.customers.get(customerId);
+    if (c) {
+      setViewingCustomer(c);
+    } else {
+      alert("找不到該村民資料");
+    }
+  };
+
   const renderContent = () => {
     switch (activeView) {
       case 'dashboard':
@@ -81,7 +105,7 @@ const App: React.FC = () => {
           />
         );
       case 'boss_dashboard':
-        return <BossDashboard />;
+        return <BossDashboard onNavigate={(view) => setActiveView(view as View)} />;
       case 'analysis':
         return <AnalysisWorkspace />;
       case 'changelog':
@@ -93,7 +117,8 @@ const App: React.FC = () => {
             onEdit={(c) => {
               setSelectedCustomer(c);
               setActiveView('customer_edit');
-            }} 
+            }}
+            onViewCustomer={handleViewCustomer}
           />
         );
       case 'customer_add':
@@ -129,6 +154,7 @@ const App: React.FC = () => {
               setSelectedJob(job);
               setActiveView('job_edit');
             }}
+            onViewCustomer={handleViewCustomer}
           />
         );
       case 'job_view':
@@ -140,6 +166,7 @@ const App: React.FC = () => {
               setActiveView('jobs');
             }}
             onEdit={() => setActiveView('job_edit')}
+            onViewCustomer={handleViewCustomer}
           />
         ) : <Dashboard 
             onStartReport={(c) => { setSelectedCustomer(c); setActiveView('job_add'); }} 
@@ -169,7 +196,7 @@ const App: React.FC = () => {
       case 'import':
         return <ImportCenter />;
       default:
-        return <BossDashboard />;
+        return <BossDashboard onNavigate={(view) => setActiveView(view as View)} />;
     }
   };
 
@@ -177,6 +204,26 @@ const App: React.FC = () => {
     <Layout activeView={activeView} onNavigate={(v) => setActiveView(v as View)}>
       {renderContent()}
       
+      {/* Global Customer Detail Modal */}
+      {viewingCustomer && (
+        <CustomerDetailModal 
+          customer={viewingCustomer}
+          onClose={() => setViewingCustomer(null)}
+          onEdit={(c) => {
+            setViewingCustomer(null);
+            setSelectedCustomer(c);
+            setActiveView('customer_edit');
+          }}
+          onDelete={async (id) => {
+             if(confirm("確定刪除此村民？")) {
+                await db.customers.delete(id);
+                setViewingCustomer(null);
+             }
+          }}
+        />
+      )}
+
+      {/* Floating Modal for Quick Customer Add */}
       {isQuickAddModalOpen && (
         <CustomerForm 
           mode="modal"

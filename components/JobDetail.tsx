@@ -6,16 +6,17 @@ import { auth } from '../services/auth';
 import ConfirmDialog from './ConfirmDialog';
 import { 
   ArrowLeft, Edit3, Calendar, Clock, MapPin, Phone, 
-  Wrench, Beaker, DollarSign, FileText, Building2, CheckCircle2, User, Share2, Printer, Zap, ArrowRight, Trash2, Car, Droplets, Tag, CreditCard, Receipt, Waves
+  Wrench, Beaker, DollarSign, FileText, Building2, CheckCircle2, User, Share2, Printer, Zap, ArrowRight, Trash2, Car, Droplets, Tag, CreditCard, Receipt, Waves, AlertCircle
 } from 'lucide-react';
 
 interface JobDetailProps {
   job: Job;
   onBack: () => void;
   onEdit: () => void;
+  onViewCustomer?: (customerId: string) => void;
 }
 
-const JobDetail: React.FC<JobDetailProps> = ({ job, onBack, onEdit }) => {
+const JobDetail: React.FC<JobDetailProps> = ({ job, onBack, onEdit, onViewCustomer }) => {
   const [customer, setCustomer] = React.useState<Customer | undefined>();
   const canWrite = auth.canWrite();
   const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false);
@@ -44,6 +45,14 @@ const JobDetail: React.FC<JobDetailProps> = ({ job, onBack, onEdit }) => {
     }
   };
 
+  const handleViewProfile = () => {
+    if (customer && onViewCustomer) {
+      onViewCustomer(customer.customer_id);
+    } else if (!onViewCustomer) {
+      console.warn("onViewCustomer prop missing in JobDetail");
+    }
+  };
+
   const renderAvatar = (c: Customer | undefined) => {
     let emoji = '👨';
     let color = 'bg-slate-200';
@@ -61,9 +70,12 @@ const JobDetail: React.FC<JobDetailProps> = ({ job, onBack, onEdit }) => {
     }
 
     return (
-      <div className={`w-20 h-20 rounded-[2rem] border-4 border-white flex items-center justify-center text-4xl shadow-xl relative ${color}`}>
+      <button 
+        onClick={handleViewProfile}
+        className={`w-20 h-20 rounded-[2rem] border-4 border-white flex items-center justify-center text-4xl shadow-xl relative transition-transform active:scale-95 hover:scale-105 ${color}`}
+      >
         {emoji}
-      </div>
+      </button>
     );
   };
 
@@ -116,7 +128,7 @@ const JobDetail: React.FC<JobDetailProps> = ({ job, onBack, onEdit }) => {
           <div className="flex items-center justify-between mb-6">
              <div className="flex items-center gap-4">
                {renderAvatar(customer)}
-               <div>
+               <div className="cursor-pointer hover:opacity-70 transition-opacity" onClick={handleViewProfile}>
                   <h3 className="text-2xl font-black text-[#5d4a36]">{customer?.displayName || job.contactPerson}</h3>
                   <div className="text-sm font-bold text-slate-400">{job.serviceDate} • {job.arrival_time || '未定'} 抵達</div>
                </div>
@@ -157,18 +169,36 @@ const JobDetail: React.FC<JobDetailProps> = ({ job, onBack, onEdit }) => {
                  {!job.serviceItems.includes(ServiceItem.TANK) && <span className="text-[10px] bg-slate-100 text-slate-400 px-2 py-0.5 rounded">未施作</span>}
               </h4>
               {job.serviceItems.includes(ServiceItem.TANK) && (
-                <div className="space-y-3">
-                   {job.tankConfigs.map((tank, i) => (
-                      <div key={i} className="flex justify-between items-center bg-blue-50 p-3 rounded-xl border border-blue-100">
-                         <span className="text-sm font-bold text-blue-900">{tank.tonnage}噸 {tank.material}</span>
-                         <div className="flex gap-2 text-xs">
-                            <span className="bg-white px-2 py-1 rounded text-blue-500 font-bold">{tank.location}</span>
-                            <span className="bg-white px-2 py-1 rounded text-blue-500 font-bold">{tank.count}顆</span>
-                            {tank.hasMotor && <span className="bg-orange-100 text-orange-600 px-2 py-1 rounded font-bold">馬達</span>}
-                         </div>
-                      </div>
-                   ))}
-                </div>
+                <>
+                  <div className="space-y-3 mb-6">
+                     {job.tankConfigs.map((tank, i) => (
+                        <div key={i} className="flex justify-between items-center bg-blue-50 p-3 rounded-xl border border-blue-100">
+                           <span className="text-sm font-bold text-blue-900">{tank.tonnage}噸 {tank.material}</span>
+                           <div className="flex gap-2 text-xs">
+                              <span className="bg-white px-2 py-1 rounded text-blue-500 font-bold">{tank.location}</span>
+                              <span className="bg-white px-2 py-1 rounded text-blue-500 font-bold">{tank.count}顆</span>
+                              {tank.hasMotor && <span className="bg-orange-100 text-orange-600 px-2 py-1 rounded font-bold">馬達</span>}
+                           </div>
+                        </div>
+                     ))}
+                  </div>
+                  
+                  {/* Tank Conditions Section (Moved Here) */}
+                  <div className="border-t border-slate-100 pt-4">
+                     <h5 className="text-xs font-bold text-slate-400 mb-2 flex items-center gap-1"><AlertCircle size={12}/> 水塔狀況</h5>
+                     <div className="flex flex-wrap gap-2">
+                        {job.tankConditionTags && job.tankConditionTags.length > 0 ? (
+                           job.tankConditionTags.map(t => (
+                              <span key={t} className="bg-red-50 text-red-500 px-2 py-1 rounded-lg text-xs font-bold border border-red-100">
+                                 #{t}
+                              </span>
+                           ))
+                        ) : (
+                           <span className="text-xs text-slate-300 italic">未填寫狀況</span>
+                        )}
+                     </div>
+                  </div>
+                </>
               )}
            </div>
 
@@ -236,16 +266,16 @@ const JobDetail: React.FC<JobDetailProps> = ({ job, onBack, onEdit }) => {
         <div className="ac-bubble p-8 bg-[#fdfaf0] border-[#eeeada] border-4">
           <div className="mb-6">
              <h4 className="text-sm font-black text-[#5d4a36] mb-3 flex items-center gap-2">
-                <Tag size={16} className="text-[#78b833]"/> 標籤紀錄
+                <Tag size={16} className="text-[#78b833]"/> 主觀感受
              </h4>
              <div className="flex flex-wrap gap-2">
-                {[...(job.tankConditionTags || []), ...(job.subjective_tags || [])].map(t => (
+                {[...(job.subjective_tags || [])].map(t => (
                    <span key={t} className="bg-white px-3 py-1.5 rounded-xl border-2 border-[#e8dcb9] text-xs font-bold text-[#b59a7a]">
                       #{t}
                    </span>
                 ))}
-                {[...(job.tankConditionTags || []), ...(job.subjective_tags || [])].length === 0 && (
-                   <span className="text-xs text-slate-300 italic">無標籤</span>
+                {[...(job.subjective_tags || [])].length === 0 && (
+                   <span className="text-xs text-slate-300 italic">無紀錄</span>
                 )}
              </div>
           </div>

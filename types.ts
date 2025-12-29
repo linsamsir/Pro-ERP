@@ -58,7 +58,9 @@ export interface CustomerSource {
 }
 
 export interface Customer {
-  customer_id: string;
+  docId?: string; // Firestore Document ID (System Key - Non-editable)
+  customer_id: string; // Business Logic Key (Readable ID - Editable)
+  
   customerType: '個人' | '公司';
   
   // Basic Info

@@ -1,8 +1,8 @@
 
 import React from 'react';
 import { db } from '../services/db';
-import { Job, JobStatus, ServiceItem, TankConfig, Customer, ExtraItem } from '../types';
-import { Save, ArrowLeft, Calendar, Receipt, Wrench, ChevronDown, ChevronUp, Plus, Trash2, CheckCircle2, Clock, Minus, AlertCircle, Home, MapPin, Car, Edit2, X, Tag } from 'lucide-react';
+import { Job, JobStatus, ServiceItem, TankConfig, Customer, ExtraItem, AvatarType } from '../types';
+import { Save, ArrowLeft, Calendar, Receipt, Wrench, ChevronDown, ChevronUp, Plus, Trash2, CheckCircle2, Clock, Minus, AlertCircle, Home, MapPin, Car, Edit2, X, Tag, User, Search, RefreshCw } from 'lucide-react';
 
 interface JobManagementProps {
   initialJob?: Job;
@@ -77,19 +77,35 @@ const JobManagement: React.FC<JobManagementProps> = ({ initialJob, initialCustom
     return base as Job;
   });
 
-  // UI State - Use optional chaining for safety
+  // UI State
+  const [activeCustomer, setActiveCustomer] = React.useState<Customer | undefined>(initialCustomer);
   const [showExtra, setShowExtra] = React.useState((job.financial?.extra_items?.length || 0) > 0);
   const [showSuccessModal, setShowSuccessModal] = React.useState(false);
   const [showTimeModal, setShowTimeModal] = React.useState(false);
   const [tempTime, setTempTime] = React.useState(job.arrival_time);
   const [countdown, setCountdown] = React.useState(2);
-  
-  // Traffic Override State
   const [isTrafficOverride, setIsTrafficOverride] = React.useState(!!job.travelMinutesOverride);
-  
-  // Subjective Tags State
   const [customTagInput, setCustomTagInput] = React.useState('');
   const [showCustomTagInput, setShowCustomTagInput] = React.useState(false);
+
+  // Customer Picker Modal State
+  const [showCustomerPicker, setShowCustomerPicker] = React.useState(false);
+  const [pickerSearch, setPickerSearch] = React.useState('');
+  const [allCustomers, setAllCustomers] = React.useState<Customer[]>([]);
+
+  // Load customers for picker
+  React.useEffect(() => {
+    const loadC = async () => {
+      const data = await db.customers.getAll();
+      setAllCustomers(data);
+      // If we have an ID but no object, try to find it
+      if (job.customerId && !activeCustomer) {
+        const found = data.find(c => c.customer_id === job.customerId);
+        if (found) setActiveCustomer(found);
+      }
+    };
+    loadC();
+  }, []);
 
   // --- Helpers ---
   const update = (u: Partial<Job>) => setJob(p => ({ ...p, ...u }));
@@ -145,6 +161,13 @@ const JobManagement: React.FC<JobManagementProps> = ({ initialJob, initialCustom
   // Submit Logic
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    if (!job.customerId) {
+        alert("請先選擇一位村民！");
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        return;
+    }
+
     await db.jobs.save(job);
     
     setShowSuccessModal(true);
@@ -158,6 +181,27 @@ const JobManagement: React.FC<JobManagementProps> = ({ initialJob, initialCustom
         return prev - 1;
       });
     }, 1000);
+  };
+
+  // Select Customer Helper
+  const handleSelectCustomer = (c: Customer) => {
+    setActiveCustomer(c);
+    update({ 
+        customerId: c.customer_id,
+        contactPerson: c.displayName,
+        contactPhone: c.phones[0]?.number
+    });
+    setShowCustomerPicker(false);
+  };
+
+  const getAvatarInfo = (type: AvatarType) => {
+    switch (type) {
+      case 'grandpa': return { icon: '👴', color: 'bg-stone-100' };
+      case 'grandma': return { icon: '👵', color: 'bg-orange-100' };
+      case 'man': return { icon: '👨', color: 'bg-blue-100' };
+      case 'woman': return { icon: '👩', color: 'bg-pink-100' };
+      default: return { icon: '🏠', color: 'bg-slate-100' };
+    }
   };
 
   // --- Components ---
@@ -376,11 +420,88 @@ const JobManagement: React.FC<JobManagementProps> = ({ initialJob, initialCustom
         </button>
         <div>
           <h2 className="text-h1 text-[#5d4a36]">任務回報單</h2>
-          <p className="text-note font-bold">村民: {initialCustomer?.displayName}</p>
+          <p className="text-note font-bold">填寫完工紀錄</p>
         </div>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-8">
+
+        {/* 0. Customer Selector (Requirement D2) */}
+        <div className="bg-white rounded-[1.5rem] border-2 border-[#e8dcb9] p-2 flex items-center shadow-sm">
+           {activeCustomer ? (
+             <div className="flex-1 flex items-center gap-4 p-2">
+                {(() => {
+                   const info = getAvatarInfo(activeCustomer.avatar || 'man');
+                   return (
+                     <div className={`w-14 h-14 rounded-full flex items-center justify-center text-3xl shrink-0 ${info.color}`}>
+                       {info.icon}
+                     </div>
+                   );
+                })()}
+                <div>
+                   <div className="font-black text-lg text-[#5d4a36]">{activeCustomer.displayName}</div>
+                   <div className="text-xs font-bold text-slate-400 font-mono">{activeCustomer.customer_id}</div>
+                </div>
+             </div>
+           ) : (
+             <div className="flex-1 p-3 text-slate-400 font-bold flex items-center gap-2">
+                <AlertCircle size={20}/> 請先選擇一位村民
+             </div>
+           )}
+           <button 
+             type="button" 
+             onClick={() => setShowCustomerPicker(true)}
+             className="bg-[#78b833] text-white px-5 py-3 rounded-xl font-bold text-sm shadow-sm hover:bg-[#5a8d26] shrink-0 m-1"
+           >
+             {activeCustomer ? '更換村民' : '選擇村民'}
+           </button>
+        </div>
+
+        {/* Customer Picker Modal */}
+        {showCustomerPicker && (
+          <div className="fixed inset-0 z-[100] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+             <div className="bg-[#fffbf0] w-full max-w-lg rounded-[2rem] h-[80vh] flex flex-col border-4 border-[#e8dcb9]">
+                <div className="p-5 border-b border-[#e8dcb9] flex justify-between items-center">
+                   <h3 className="font-black text-xl text-[#5d4a36]">選擇村民</h3>
+                   <button onClick={() => setShowCustomerPicker(false)} className="p-2 bg-white rounded-full"><X size={20}/></button>
+                </div>
+                <div className="p-4 border-b border-[#e8dcb9] bg-white">
+                   <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" size={18}/>
+                      <input 
+                        autoFocus
+                        placeholder="搜尋姓名或電話..." 
+                        className="input-nook pl-10 py-3"
+                        value={pickerSearch}
+                        onChange={e => setPickerSearch(e.target.value)}
+                      />
+                   </div>
+                </div>
+                <div className="flex-1 overflow-y-auto p-4 space-y-2">
+                   {allCustomers
+                     .filter(c => c.displayName.includes(pickerSearch) || c.phones.some(p => p.number.includes(pickerSearch)))
+                     .slice(0, 50) // Limit render
+                     .map(c => (
+                       <button 
+                         key={c.customer_id}
+                         type="button"
+                         onClick={() => handleSelectCustomer(c)}
+                         className="w-full text-left bg-white p-3 rounded-xl border border-[#e8dcb9] flex items-center gap-3 hover:bg-[#f0fdf4] hover:border-[#78b833] transition-all"
+                       >
+                          {(() => {
+                             const info = getAvatarInfo(c.avatar || 'man');
+                             return <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xl ${info.color}`}>{info.icon}</div>
+                          })()}
+                          <div>
+                             <div className="font-bold text-[#5d4a36]">{c.displayName}</div>
+                             <div className="text-xs text-slate-400">{c.phones[0]?.number}</div>
+                          </div>
+                       </button>
+                   ))}
+                </div>
+             </div>
+          </div>
+        )}
 
         {/* 1. Date & Time & Travel */}
         <div className="ac-card card-highlight">
@@ -718,7 +839,7 @@ const JobManagement: React.FC<JobManagementProps> = ({ initialJob, initialCustom
         </div>
 
         {/* Submit */}
-        <button type="submit" className="w-full btn-primary text-xl py-5 rounded-2xl shadow-xl">
+        <button type="submit" className="w-full btn-primary text-xl py-5 rounded-2xl shadow-xl disabled:opacity-50 disabled:shadow-none" disabled={!job.customerId}>
            <Save size={24} /> 任務完成，領取獎勵！
         </button>
 

@@ -10,9 +10,10 @@ interface JobListProps {
   onAdd: () => void;
   onEdit: (job: Job) => void;
   onView: (job: Job) => void;
+  onViewCustomer?: (customerId: string) => void;
 }
 
-const JobList: React.FC<JobListProps> = ({ onAdd, onEdit, onView }) => {
+const JobList: React.FC<JobListProps> = ({ onAdd, onEdit, onView, onViewCustomer }) => {
   const [jobs, setJobs] = React.useState<Job[]>([]);
   const [customerMap, setCustomerMap] = React.useState<Record<string, Customer>>({});
   const [loading, setLoading] = React.useState(true);
@@ -72,13 +73,25 @@ const JobList: React.FC<JobListProps> = ({ onAdd, onEdit, onView }) => {
     }
   };
 
+  const handleCustomerClick = (e: React.MouseEvent, customerId: string) => {
+    e.stopPropagation();
+    if (onViewCustomer) {
+      onViewCustomer(customerId);
+    } else {
+      console.warn("onViewCustomer prop missing in JobList");
+    }
+  };
+
   const renderAvatar = (customerId: string) => {
      const c = customerMap[customerId];
      const info = getAvatarInfo(c?.avatar || 'man');
      return (
-        <div className={`w-12 h-12 rounded-full border-2 border-white shadow-sm flex items-center justify-center text-2xl ${info.color}`}>
+        <button 
+          onClick={(e) => handleCustomerClick(e, customerId)}
+          className={`w-12 h-12 rounded-full border-2 border-white shadow-sm flex items-center justify-center text-2xl hover:scale-110 transition-transform ${info.color}`}
+        >
            {info.icon}
-        </div>
+        </button>
      );
   };
 
@@ -160,7 +173,10 @@ const JobList: React.FC<JobListProps> = ({ onAdd, onEdit, onView }) => {
                   {renderAvatar(job.customerId)}
                   
                   <div>
-                    <h3 className="text-lg font-black text-[#5d4a36] group-hover:text-[#78b833] transition-colors leading-tight">
+                    <h3 
+                      onClick={(e) => handleCustomerClick(e, job.customerId)}
+                      className="text-lg font-black text-[#5d4a36] group-hover:text-[#78b833] transition-colors leading-tight hover:underline"
+                    >
                       {job.contactPerson}
                     </h3>
                     <div className="text-xs font-bold text-slate-400 mt-0.5">{job.serviceDate}</div>

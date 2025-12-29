@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Home, Users, ClipboardList, Menu, Tent, Crown, PieChart, Activity, LogOut, User as UserIcon, Bug } from 'lucide-react';
+import { Home, Users, ClipboardList, Menu, Tent, Crown, PieChart, Activity, LogOut, User as UserIcon, Bug, Wallet } from 'lucide-react';
 import { auth } from '../services/auth';
 import ConfirmDialog from './ConfirmDialog';
 import DebugPanel from './DebugPanel';
@@ -20,6 +20,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onNavigate }) => 
   const navItems = [
     { id: 'dashboard', label: '村莊地圖', icon: Home, color: 'text-orange-500' },
     { id: 'boss_dashboard', label: '老闆戰情', icon: Crown, color: 'text-yellow-500' },
+    // Removed Expenses Item
     { id: 'analysis', label: '進階分析', icon: PieChart, color: 'text-indigo-500' },
     { id: 'customers', label: '村民名冊', icon: Users, color: 'text-blue-500' },
     { id: 'jobs', label: '村莊任務', icon: ClipboardList, color: 'text-green-600' },
@@ -121,7 +122,8 @@ const Layout: React.FC<LayoutProps> = ({ children, activeView, onNavigate }) => 
           backgroundImage: 'radial-gradient(#78b833 1px, transparent 1px)',
           backgroundSize: '40px 40px'
         }} />
-        <div className={`relative z-10 mx-auto ${activeView === 'analysis' ? 'h-full p-0' : 'p-4 md:p-10 max-w-7xl'}`}>
+        {/* Adjusted padding for full-height views like Analysis */}
+        <div className={`relative z-10 mx-auto ${['analysis'].includes(activeView) ? 'h-full p-0' : 'p-4 md:p-10 max-w-7xl'}`}>
           {children}
         </div>
       </main>
