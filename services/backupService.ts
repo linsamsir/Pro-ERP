@@ -45,7 +45,12 @@ const flattenObject = (obj: any): Record<string, any> => {
         result[key] = value.toISOString();
       } else {
         // Stringify nested objects (arrays, objects)
-        result[key] = JSON.stringify(value);
+        try {
+          result[key] = JSON.stringify(value);
+        } catch (e) {
+          console.warn(`[Backup] Circular/Complex data in key '${key}' skipped.`, e);
+          result[key] = '[Complex Data]';
+        }
       }
     } else {
       result[key] = value;
@@ -152,7 +157,7 @@ export const BackupService = {
         // Handle "Failed to fetch" which is often a hidden 401/CORS error from Google if config is slightly off
         if (error.message === 'Failed to fetch' || error.message.includes('NetworkError')) {
              if (retryCount >= MAX_RETRIES) {
-                 throw new Error("無法連線 (Failed to fetch)。\n請確認：\n1. 部署權限是否為「任何人 (Anyone)」\n2. 網址是否正確\n3. 網路連線正常");
+                 throw new Error("無法連線 (Failed to fetch)。\n通常原因：Token 錯誤導致 401 被拒，或 Script 未設為「任何人」存取。\n(瀏覽器隱藏了真實狀態碼)");
              }
         }
 

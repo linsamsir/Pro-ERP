@@ -2,11 +2,12 @@
 import React from 'react';
 import { db } from '../services/db';
 import { BackupService, BackupLog } from '../services/backupService';
+import { MigrationService, MigrationStats, JobFixDiff, CustomerFixDiff } from '../services/migrationService';
 import { BuildingType, Preference, ServiceItem, JobStatus, Job, Customer } from '../types';
-import { Clipboard, Loader2, ShieldCheck, Database, CheckCircle2, FileSpreadsheet, UserPlus, History, ArrowDown, CloudRain, Save, AlertTriangle, Play, HelpCircle, Link as LinkIcon, Server } from 'lucide-react';
+import { Clipboard, Loader2, ShieldCheck, Database, CheckCircle2, FileSpreadsheet, UserPlus, History, ArrowDown, CloudRain, Save, AlertTriangle, Play, HelpCircle, Link as LinkIcon, Server, Wrench, RefreshCw, Eye, ArrowRight } from 'lucide-react';
 
 const ImportCenter: React.FC = () => {
-  const [activeTab, setActiveTab] = React.useState<'new' | 'returning' | 'backup'>('new');
+  const [activeTab, setActiveTab] = React.useState<'new' | 'returning' | 'backup' | 'fix'>('new');
   
   // Import State
   const [pasteData, setPasteData] = React.useState('');
@@ -21,8 +22,13 @@ const ImportCenter: React.FC = () => {
   const [backupSuccess, setBackupSuccess] = React.useState(false);
   const [scriptUrl, setScriptUrl] = React.useState('');
 
+  // Fix Tool State
+  const [fixStep, setFixStep] = React.useState<'IDLE' | 'SCANNING' | 'READY' | 'FIXING' | 'DONE'>('IDLE');
+  const [jobStats, setJobStats] = React.useState<MigrationStats | null>(null);
+  const [custStats, setCustStats] = React.useState<MigrationStats | null>(null);
+  const [fixProgress, setFixProgress] = React.useState(0);
+
   React.useEffect(() => {
-    // Check if backup is configured
     try {
         const { url } = BackupService.checkConfig();
         setBackupConfigured(true);
@@ -43,11 +49,11 @@ const ImportCenter: React.FC = () => {
     }
   };
 
+  // --- Import Logic (Kept as is) ---
   const handleImport = async () => {
     if (!pasteData.trim()) return;
     setIsProcessing(true);
     
-    // Split by newline
     const rows = pasteData.split('\n').filter(row => row.trim());
     if (rows.length < 2) {
       alert("請包含標題列！");
@@ -79,7 +85,6 @@ const ImportCenter: React.FC = () => {
           continue;
         }
 
-        // Logic difference: For 'returning', we emphasize finding existing, but fallback to create is safe
         let customer = allCustomers.find(c => 
           (rawId && c.customer_id === rawId) || 
           (phone && c.phones.some(p => p.number === phone))
@@ -100,7 +105,7 @@ const ImportCenter: React.FC = () => {
             preference: Preference.PHONE,
             building_type: (rowData['房屋類型'] || '').includes('大樓') ? BuildingType.BUILDING : BuildingType.DETACHED,
             has_elevator: (rowData['備註'] || '').includes('電梯'),
-            is_returning: activeTab === 'returning', // Explicitly set based on tab
+            is_returning: activeTab === 'returning',
             ai_tags: [],
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
@@ -109,12 +114,10 @@ const ImportCenter: React.FC = () => {
           db.customers.save(newCustomer);
           newCustomerCount++;
         } else if (activeTab === 'returning') {
-           // Update existing customer status if importing in returning mode
            customer.is_returning = true;
            db.customers.save(customer);
         }
 
-        // Create Job Logic (Shared for now, but conceptual separation is clear in UI)
         const serviceItems: ServiceItem[] = [];
         const rawService = rowData['服務內容'] || '';
         if (rawService.includes('塔')) serviceItems.push(ServiceItem.TANK);
@@ -135,7 +138,6 @@ const ImportCenter: React.FC = () => {
           contactPerson: name,
           contactPhone: phone,
           
-          // Pipe Details - New Defaults
           pipeBeforeStatus: '保養',
           pipeAfterStatus: '改善明顯',
           
@@ -162,24 +164,14 @@ const ImportCenter: React.FC = () => {
           bookingDate: formatToDateString(rowData['預約日期'] || rowData['時間戳記']),
           bookingSlot: (rowData['預約時段'] || '早') as any,
           serviceDate: formatToDateString(rowData['施工日期'] || rowData['日期'] || rowData['時間戳記']),
-          
-          // Time & Travel - New Defaults
           arrival_time: '09:30',
           arrivalTimePreset: '09:30',
-          
           workDurationHours: parseFloat(rowData['工時']) || 2,
           travelMode: '單程',
           travelBaseMinutes: 30,
           travelMinutesCalculated: 30,
-          
-          // Consumables - New Structure
-          consumables: {
-            citric_acid: 1,
-            chemical: 0
-          },
+          consumables: { citric_acid: 1, chemical: 0 },
           citricAcidCans: 1, otherChemicalCans: 0,
-          
-          // Financials - New Structure
           financial: {
             total_amount: price,
             payment_method: '現金',
@@ -188,7 +180,6 @@ const ImportCenter: React.FC = () => {
           },
           totalPaid: price, paymentMethod: '現金',
           invoiceNeeded: (rowData['是否收費'] || '').includes('是'),
-          
           hasExtraCharge: false, extraChargeAmount: 0, extraChargeNote: '',
           serviceNote: rowData['備註'] || ''
         };
@@ -206,11 +197,12 @@ const ImportCenter: React.FC = () => {
     setPasteData('');
   };
 
+  // --- Backup Logic (Kept as is) ---
   const handleBackup = async () => {
     setIsBackingUp(true);
     setBackupError(null);
     setBackupSuccess(false);
-    setBackupLogs({}); // Clear previous logs
+    setBackupLogs({});
 
     try {
         await BackupService.runBackup((log) => {
@@ -223,8 +215,6 @@ const ImportCenter: React.FC = () => {
     } catch (e: any) {
         console.error("Backup UI Caught Error:", e);
         setBackupError(e.message || '備份過程發生未知錯誤');
-        
-        // Mark the last active log as ERROR in UI
         setBackupLogs(prev => {
             const newState = { ...prev };
             const activeKey = Object.keys(newState).find(k => newState[k].status === 'UPLOADING');
@@ -239,6 +229,56 @@ const ImportCenter: React.FC = () => {
         });
     } finally {
         setIsBackingUp(false);
+    }
+  };
+
+  // --- Fix Tool Logic ---
+  const handleScanFix = async () => {
+    setFixStep('SCANNING');
+    try {
+      const jStats = await MigrationService.scanJobsForFix();
+      setJobStats(jStats);
+      
+      const cStats = await MigrationService.scanCustomersForFix();
+      setCustStats(cStats);
+      
+      setFixStep('READY');
+    } catch (e) {
+      console.error(e);
+      alert("掃描失敗");
+      setFixStep('IDLE');
+    }
+  };
+
+  const handleExecuteFix = async () => {
+    if (!jobStats || !custStats) return;
+    setFixStep('FIXING');
+    setFixProgress(0);
+    const total = jobStats.toFix + custStats.toFix;
+    let done = 0;
+
+    try {
+      if (jobStats.toFix > 0) {
+        await MigrationService.executeJobFix(jobStats.diffs as any[], (processed) => {
+          done += processed; // This logic is simplified, batch size might make progress jumpy but sufficient
+          setFixProgress(Math.round((done / total) * 100));
+        });
+      }
+      
+      // Reset done base for next batch visually if needed, or accumulate
+      // Here simpler to just let it run
+      
+      if (custStats.toFix > 0) {
+        await MigrationService.executeCustomerFix(custStats.diffs as any[], (processed) => {
+           done += processed; 
+           setFixProgress(Math.min(100, Math.round((done / total) * 100)));
+        });
+      }
+
+      setFixStep('DONE');
+    } catch (e) {
+      console.error(e);
+      alert("修正過程發生錯誤");
     }
   };
 
@@ -294,25 +334,143 @@ const ImportCenter: React.FC = () => {
       <div className="flex bg-[#e8dcb9] p-2 rounded-3xl gap-2 overflow-x-auto">
         <button 
           onClick={() => { setActiveTab('new'); setStats(null); }}
-          className={`flex-1 min-w-[140px] py-4 rounded-2xl font-black text-lg flex items-center justify-center gap-2 transition-all ${activeTab === 'new' ? 'bg-white text-[#5d4a36] shadow-md' : 'text-[#7c6046] hover:bg-white/50'}`}
+          className={`flex-1 min-w-[120px] py-4 rounded-2xl font-black text-lg flex items-center justify-center gap-2 transition-all ${activeTab === 'new' ? 'bg-white text-[#5d4a36] shadow-md' : 'text-[#7c6046] hover:bg-white/50'}`}
         >
           <UserPlus size={20} /> 新客移居
         </button>
         <button 
           onClick={() => { setActiveTab('returning'); setStats(null); }}
-          className={`flex-1 min-w-[140px] py-4 rounded-2xl font-black text-lg flex items-center justify-center gap-2 transition-all ${activeTab === 'returning' ? 'bg-[#78b833] text-white shadow-md' : 'text-[#7c6046] hover:bg-white/50'}`}
+          className={`flex-1 min-w-[120px] py-4 rounded-2xl font-black text-lg flex items-center justify-center gap-2 transition-all ${activeTab === 'returning' ? 'bg-[#78b833] text-white shadow-md' : 'text-[#7c6046] hover:bg-white/50'}`}
         >
           <History size={20} /> 老友回歸
         </button>
         <button 
           onClick={() => { setActiveTab('backup'); setStats(null); }}
-          className={`flex-1 min-w-[140px] py-4 rounded-2xl font-black text-lg flex items-center justify-center gap-2 transition-all ${activeTab === 'backup' ? 'bg-blue-500 text-white shadow-md' : 'text-[#7c6046] hover:bg-white/50'}`}
+          className={`flex-1 min-w-[120px] py-4 rounded-2xl font-black text-lg flex items-center justify-center gap-2 transition-all ${activeTab === 'backup' ? 'bg-blue-500 text-white shadow-md' : 'text-[#7c6046] hover:bg-white/50'}`}
         >
           <CloudRain size={20} /> 雲端備份
         </button>
+        <button 
+          onClick={() => { setActiveTab('fix'); setStats(null); }}
+          className={`flex-1 min-w-[120px] py-4 rounded-2xl font-black text-lg flex items-center justify-center gap-2 transition-all ${activeTab === 'fix' ? 'bg-orange-400 text-white shadow-md' : 'text-[#7c6046] hover:bg-white/50'}`}
+        >
+          <Wrench size={20} /> 資料修正
+        </button>
       </div>
 
-      {activeTab === 'backup' ? (
+      {activeTab === 'fix' && (
+        <div className="ac-card p-8 bg-white animate-pop">
+           <div className="flex items-start gap-4 mb-8">
+               <div className="bg-orange-100 p-4 rounded-full text-orange-600">
+                   <Wrench size={32}/>
+               </div>
+               <div className="flex-1">
+                   <h3 className="text-2xl font-black text-[#5d4a36]">資料修正工具 (Migration)</h3>
+                   <p className="text-[#b59a7a] font-bold mt-1">針對匯入的歷史資料進行分類修正與狀態重算。</p>
+               </div>
+           </div>
+
+           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+              <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                 <h4 className="font-bold text-[#5d4a36] mb-2 flex items-center gap-2"><RefreshCw size={16}/> 1. 修正服務類型 (Jobs)</h4>
+                 <p className="text-xs text-slate-500 leading-relaxed">
+                    掃描工單備註，若含有「水管」關鍵字，將自動修正服務項目為 [Pipe] 或 [Tank+Pipe]。<br/>
+                    目前預設皆為 [Tank]。
+                 </p>
+                 {jobStats && (
+                   <div className="mt-3 bg-white p-2 rounded-lg border text-sm font-bold text-slate-600">
+                      掃描: {jobStats.scanned} 筆 <br/>
+                      <span className="text-orange-500">待修正: {jobStats.toFix} 筆</span>
+                   </div>
+                 )}
+              </div>
+              <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                 <h4 className="font-bold text-[#5d4a36] mb-2 flex items-center gap-2"><RefreshCw size={16}/> 2. 重算回流狀態 (Customers)</h4>
+                 <p className="text-xs text-slate-500 leading-relaxed">
+                    依據實際工單數量重新計算。<br/>
+                    規則：工單數 {'>='} 2 筆才標記為「回流客」。
+                 </p>
+                 {custStats && (
+                   <div className="mt-3 bg-white p-2 rounded-lg border text-sm font-bold text-slate-600">
+                      掃描: {custStats.scanned} 筆 <br/>
+                      <span className="text-orange-500">待修正: {custStats.toFix} 筆</span>
+                   </div>
+                 )}
+              </div>
+           </div>
+
+           {/* Diff Preview */}
+           {(jobStats?.toFix > 0 || custStats?.toFix > 0) && fixStep === 'READY' && (
+             <div className="mb-6 bg-[#fffbf0] border-2 border-[#e8dcb9] rounded-xl p-4 max-h-60 overflow-y-auto">
+                <div className="text-xs font-bold text-[#b59a7a] mb-2 sticky top-0 bg-[#fffbf0]">變更預覽 (前 10 筆)：</div>
+                <div className="space-y-2">
+                   {jobStats?.diffs.slice(0, 5).map((d: any, i) => (
+                     <div key={`j-${i}`} className="text-xs flex gap-2 border-b border-slate-200 pb-1">
+                        <span className="font-bold text-blue-500">[Job]</span>
+                        <span className="text-slate-500">{d.contactPerson}:</span>
+                        <span className="line-through text-slate-400">{d.oldType.join(',')}</span>
+                        <ArrowRight size={10} className="mt-1 text-slate-300"/>
+                        <span className="font-bold text-green-600">{d.newType.join(',')}</span>
+                        <span className="text-slate-400 italic truncate ml-auto max-w-[100px]">({d.note})</span>
+                     </div>
+                   ))}
+                   {custStats?.diffs.slice(0, 5).map((d: any, i) => (
+                     <div key={`c-${i}`} className="text-xs flex gap-2 border-b border-slate-200 pb-1">
+                        <span className="font-bold text-purple-500">[Cust]</span>
+                        <span className="text-slate-500">{d.displayName}:</span>
+                        <span className="line-through text-slate-400">{d.oldStatus ? '回流' : '新客'}</span>
+                        <ArrowRight size={10} className="mt-1 text-slate-300"/>
+                        <span className="font-bold text-green-600">{d.newStatus ? '回流' : '新客'}</span>
+                        <span className="text-slate-400 ml-auto">({d.jobCount} jobs)</span>
+                     </div>
+                   ))}
+                </div>
+             </div>
+           )}
+
+           {fixStep === 'DONE' && (
+              <div className="mb-6 bg-green-50 border-2 border-green-200 rounded-xl p-4 flex items-center justify-center gap-2 text-green-700 font-bold">
+                 <CheckCircle2/> 修正完成！
+              </div>
+           )}
+
+           <div className="flex justify-end gap-4">
+              {fixStep === 'IDLE' || fixStep === 'DONE' ? (
+                <button 
+                  onClick={handleScanFix}
+                  className="bg-blue-500 text-white px-6 py-3 rounded-xl font-black shadow-lg hover:bg-blue-600 transition-all flex items-center gap-2"
+                >
+                  <Eye size={20}/> 掃描可修正項目 (Dry Run)
+                </button>
+              ) : (
+                <>
+                  <div className="flex-1 flex items-center bg-slate-100 rounded-xl px-4">
+                     {fixStep === 'FIXING' ? (
+                        <div className="flex items-center gap-2 w-full">
+                           <Loader2 className="animate-spin text-slate-400"/>
+                           <div className="h-2 flex-1 bg-white rounded-full overflow-hidden">
+                              <div className="h-full bg-green-500 transition-all duration-300" style={{width: `${fixProgress}%`}}></div>
+                           </div>
+                           <span className="text-xs font-bold text-slate-500">{fixProgress}%</span>
+                        </div>
+                     ) : (
+                        <span className="text-sm font-bold text-slate-400">準備就緒，共 {jobStats?.toFix || 0} + {custStats?.toFix || 0} 筆變更</span>
+                     )}
+                  </div>
+                  <button 
+                    onClick={handleExecuteFix}
+                    disabled={fixStep !== 'READY' || (jobStats?.toFix === 0 && custStats?.toFix === 0)}
+                    className="bg-red-500 text-white px-6 py-3 rounded-xl font-black shadow-lg hover:bg-red-600 transition-all disabled:opacity-50 disabled:shadow-none flex items-center gap-2"
+                  >
+                    <Play size={20}/> 確認修正 (Write)
+                  </button>
+                </>
+              )}
+           </div>
+        </div>
+      )}
+
+      {activeTab === 'backup' && (
           <div className="ac-card p-8 bg-white animate-pop">
              <div className="flex items-start gap-4 mb-8">
                  <div className="bg-blue-100 p-4 rounded-full text-blue-600">
@@ -381,13 +539,15 @@ const ImportCenter: React.FC = () => {
                     onClick={handleBackup}
                     disabled={isBackingUp || !backupConfigured}
                     className="bg-blue-500 text-white px-8 py-4 rounded-2xl font-black text-xl shadow-[0_4px_0_#1e40af] active:translate-y-[4px] active:shadow-none transition-all disabled:opacity-50 disabled:shadow-none flex items-center gap-3"
-                 >
+                  >
                      {isBackingUp ? <Loader2 className="animate-spin"/> : <Play fill="currentColor"/>}
                      {isBackingUp ? '正在傳送資料...' : '開始備份'}
                  </button>
              </div>
           </div>
-      ) : (
+      )}
+
+      {(activeTab === 'new' || activeTab === 'returning') && (
           <div className="ac-card p-8 bg-white">
             {/* ... Existing Import UI ... */}
             <div className="space-y-6">
@@ -398,7 +558,9 @@ const ImportCenter: React.FC = () => {
                 <div>
                   <div className="text-lg">貼上 Excel 資料</div>
                   <div className="text-xs text-[#b59a7a] font-bold">
-                    {activeTab === 'new' ? '適用：完全沒有來過的全新客戶資料' : '適用：系統已有資料，需補登新的服務紀錄'}
+                    {activeTab === 'new' 
+                      ? '適用：完全沒有來過的全新客戶資料' 
+                      : '適用：系統已有資料，需補登新的服務紀錄'}
                   </div>
                 </div>
               </div>
@@ -441,7 +603,7 @@ const ImportCenter: React.FC = () => {
           </div>
       )}
 
-      {stats && activeTab !== 'backup' && (
+      {stats && activeTab !== 'backup' && activeTab !== 'fix' && (
         <div className="ac-card p-8 bg-[#f0fdf4] border-green-200 animate-pop">
           <div className="flex items-center gap-4 mb-6">
             <div className="bg-green-100 p-2 rounded-full text-green-600"><CheckCircle2 size={32} /></div>
