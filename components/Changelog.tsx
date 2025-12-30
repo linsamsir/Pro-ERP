@@ -57,6 +57,16 @@ const Changelog: React.FC = () => {
     document.body.removeChild(link);
   };
 
+  const safeStringify = (obj: any) => {
+    try {
+      return JSON.stringify(obj, null, 2);
+    } catch (e) {
+      console.warn("Circular structure in changelog", e);
+      // Fallback: try to just show keys or a simple message
+      return `[Complex Data - Circular Reference Detected]\nKeys: ${Object.keys(obj || {}).join(', ')}`;
+    }
+  };
+
   const renderDiff = (diff: any) => {
     if (!diff) return <div className="text-xs text-slate-400 italic">No detailed changes recorded.</div>;
     return (
@@ -65,14 +75,14 @@ const Changelog: React.FC = () => {
           <div className="flex-1 min-w-[300px]">
             <div className="text-red-400 font-bold mb-2 text-xs uppercase tracking-wider border-b border-red-900/50 pb-1">Before</div>
             <pre className="text-xs text-red-200 font-mono leading-relaxed whitespace-pre-wrap">
-              {diff.before ? JSON.stringify(diff.before, null, 2) : 'null'}
+              {diff.before ? safeStringify(diff.before) : 'null'}
             </pre>
           </div>
           <div className="w-px bg-slate-700"></div>
           <div className="flex-1 min-w-[300px]">
              <div className="text-green-400 font-bold mb-2 text-xs uppercase tracking-wider border-b border-green-900/50 pb-1">After</div>
              <pre className="text-xs text-green-200 font-mono leading-relaxed whitespace-pre-wrap">
-               {diff.after ? JSON.stringify(diff.after, null, 2) : 'null'}
+               {diff.after ? safeStringify(diff.after) : 'null'}
              </pre>
           </div>
         </div>

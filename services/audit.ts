@@ -15,6 +15,44 @@ export interface AuditEntry {
   after?: any;
 }
 
+// Simple sanitizer to remove Firestore Refs and complex objects that cause JSON cycles
+const sanitize = (obj: any): any => {
+  if (obj === null || obj === undefined) return obj;
+  if (typeof obj !== 'object') return obj;
+  
+  // Handle Firestore Timestamp (simple check for seconds/nanoseconds)
+  if (typeof obj.seconds === 'number' && typeof obj.nanoseconds === 'number') {
+    return new Date(obj.seconds * 1000).toISOString();
+  }
+  
+  // Handle Date
+  if (obj instanceof Date) return obj.toISOString();
+
+  // Handle Array
+  if (Array.isArray(obj)) {
+    return obj.map(sanitize);
+  }
+
+  // Handle Firestore References (they usually have 'firestore' property or 'path')
+  // We just convert them to a string representation to avoid cycles
+  if (obj.constructor && obj.constructor.name === 'DocumentReference') {
+    return `Ref(${obj.path || 'unknown'})`;
+  }
+  if (obj.constructor && obj.constructor.name === 'CollectionReference') {
+    return `ColRef(${obj.path || 'unknown'})`;
+  }
+
+  // Handle Object
+  const cleanObj: any = {};
+  for (const key in obj) {
+    if (Object.prototype.hasOwnProperty.call(obj, key)) {
+      // Skip internal Firebase keys or potential cycle causes if identifiable
+      cleanObj[key] = sanitize(obj[key]);
+    }
+  }
+  return cleanObj;
+};
+
 export const AuditService = {
   log: async (entry: AuditEntry, actor: User | null) => {
     try {
@@ -36,8 +74,8 @@ export const AuditService = {
       let diff = null;
       if (entry.before || entry.after) {
         diff = {
-          before: entry.before || null,
-          after: entry.after || null
+          before: entry.before ? sanitize(entry.before) : null,
+          after: entry.after ? sanitize(entry.after) : null
         };
       }
 
