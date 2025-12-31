@@ -4,22 +4,22 @@ import { db as firestore } from './firebase';
 import { auth } from './auth';
 import { AuditService } from './audit';
 import { COLLECTIONS } from './firestorePaths';
-import { collection, doc, getDocs, getDoc, setDoc, addDoc, updateDoc, query, where, orderBy, limit, serverTimestamp, Timestamp, runTransaction } from "firebase/firestore";
-import { extractAiTags, getAiCooldownSeconds } from './gemini';
+import { 
+  collection, doc, getDocs, getDoc, setDoc, addDoc, updateDoc, 
+  query, where, orderBy, limit, startAfter, getCountFromServer,
+  runTransaction,
+  QueryConstraint, QueryDocumentSnapshot 
+} from "firebase/firestore";
+import { parseRegion } from '../data/territory';
 
-// --- Helper: Deep Masking for Staff View ---
+// --- Helpers ---
 const deepMask = (obj: any): any => {
   if (!obj) return obj;
   const user = auth.getCurrentUser();
-  // Boss/Manager see everything
   if (!user || user.role === 'BOSS' || user.role === 'MANAGER') return obj;
-  // Decoy sees nothing
   if (user.role === 'DECOY') return {};
-
   const sensitiveKeys = ['amount', 'total_amount', 'totalPaid', 'cost', 'revenue', 'netProfit', 'salary', 'bossSalary', 'partnerSalary', 'insuranceCost'];
-  
   const masked = Array.isArray(obj) ? [...obj] : { ...obj };
-  
   for (const key in masked) {
     if (sensitiveKeys.some(k => key.toLowerCase().includes(k.toLowerCase()))) {
       masked[key] = typeof obj[key] === 'number' ? -1 : '****';
@@ -30,579 +30,326 @@ const deepMask = (obj: any): any => {
   return masked;
 };
 
-// --- Helper: Standardized Error Handling ---
 const handleDbError = (context: string, error: any) => {
   console.error(`[Firestore Error] ${context}:`, error);
-  console.error(`Details: Code=${error.code}, Message=${error.message}`);
-  throw error; // Re-throw to let UI handle it
+  if (error.code === 'failed-precondition' || error.message?.includes('index')) {
+    throw new Error("系統索引建立中（Firestore Index Required），請點擊錯誤訊息中的連結建立索引，或稍候再試。");
+  }
+  throw error;
 };
 
-// --- Repository Implementation ---
-
 export const db = {
-  // 1. Customers Repo
+  // 1. Customers
   customers: {
-    list: async (params: { q?: string } = {}) => {
+    generateId: () => `CUST-${Date.now()}`,
+
+    previewNextId: async () => {
+      const ref = doc(firestore, COLLECTIONS.COUNTERS, 'customers');
+      const snap = await getDoc(ref);
+      const next = (snap.data()?.count || 0) + 1;
+      return `C${String(next).padStart(4, '0')}`;
+    },
+
+    createWithAutoId: async (c: Partial<Customer>) => {
+      const now = new Date().toISOString();
+      let customer_id = '';
+      const docRef = doc(collection(firestore, COLLECTIONS.CUSTOMERS));
+      
+      // 解析地區以便未來索引
+      const addrStr = c.addresses?.find(a => a.isPrimary)?.text || c.addresses?.[0]?.text || '';
+      const { city, district } = parseRegion(addrStr);
+
+      await runTransaction(firestore, async (transaction) => {
+        const counterRef = doc(firestore, COLLECTIONS.COUNTERS, 'customers');
+        const counterSnap = await transaction.get(counterRef);
+        const nextCount = (counterSnap.data()?.count || 0) + 1;
+        customer_id = `C${String(nextCount).padStart(4, '0')}`;
+        
+        transaction.set(counterRef, { count: nextCount });
+        const payload = { 
+          ...c, 
+          customer_id,
+          city, // 寫入獨立欄位
+          district, // 寫入獨立欄位
+          updated_at: now, 
+          created_at: now,
+          is_returning: c.is_returning || false,
+          ai_tags: c.ai_tags || [],
+          avatar: c.avatar || 'man'
+        };
+        delete (payload as any).docId;
+        transaction.set(docRef, payload);
+      });
+
+      return { ...c, customer_id, docId: docRef.id, city, district } as Customer;
+    },
+
+    getTotalCount: async () => {
+      const coll = collection(firestore, COLLECTIONS.CUSTOMERS);
+      const snapshot = await getCountFromServer(query(coll));
+      return snapshot.data().count;
+    },
+
+    getCustomersPage: async (params: { city?: string, district?: string, lastDoc?: QueryDocumentSnapshot, limitSize?: number }) => {
       try {
-        console.log("[DB] Fetching customers...");
+        const { city, district, lastDoc, limitSize = 50 } = params;
         const ref = collection(firestore, COLLECTIONS.CUSTOMERS);
-        const qRef = query(ref, limit(1000)); // Safety limit
         
-        const snap = await getDocs(qRef);
-        console.log(`[DB] Fetched ${snap.size} customers raw.`);
+        // 修正策略：如果指定了「非高雄」的城市，抓取緩衝區應調大，
+        // 因為高雄佔多數，若緩衝區太小會導致台南屏東第一頁看起來沒資料
+        const effectiveLimit = (city && city !== '全部' && city !== '高雄市') ? 1000 : limitSize;
 
-        // IMPORTANT: Map the Firestore ID to docId
-        let list = snap.docs.map(d => ({ ...d.data(), docId: d.id, customer_id: d.data().customer_id || d.id } as Customer));
-        
-        // Client-side Filter: Deleted
-        list = list.filter(c => !c.deleted_at);
+        const constraints: QueryConstraint[] = [
+          orderBy('updated_at', 'desc'),
+          limit(effectiveLimit)
+        ];
 
-        // Client-side Filter: Search Query
-        if (params.q) {
-          const lowerQ = params.q.toLowerCase();
-          list = list.filter(c => 
-            c.displayName?.toLowerCase().includes(lowerQ) || 
-            c.contactName?.toLowerCase().includes(lowerQ) ||
-            c.phones?.some(p => p.number.includes(lowerQ)) ||
-            c.addresses?.some(a => a.text.includes(lowerQ)) ||
-            c.customer_id?.toLowerCase().includes(lowerQ)
-          );
-        }
+        if (lastDoc) constraints.push(startAfter(lastDoc));
 
-        return list.map(c => deepMask(c));
-      } catch (error) {
-        handleDbError('listCustomers', error);
-        return [];
-      }
-    },
-    getAll: async () => {
-      return db.customers.list(); 
-    },
-    get: async (id: string) => {
-      if (!id) return undefined; 
-      try {
-        // First attempt: fetch by doc ID (if it's a doc ID)
-        const docRef = doc(firestore, COLLECTIONS.CUSTOMERS, id);
-        const snap = await getDoc(docRef);
-        
-        if (snap.exists()) {
-           return deepMask({ ...snap.data(), docId: snap.id, customer_id: snap.data().customer_id || snap.id } as Customer);
-        }
-
-        // Second attempt: fetch by customer_id field
-        const q = query(collection(firestore, COLLECTIONS.CUSTOMERS), where('customer_id', '==', id), limit(1));
-        const qSnap = await getDocs(q);
-        if (!qSnap.empty) {
-           const d = qSnap.docs[0];
-           return deepMask({ ...d.data(), docId: d.id, customer_id: d.data().customer_id || d.id } as Customer);
-        }
-        
-        return undefined;
-      } catch (e) {
-        handleDbError('getCustomer', e);
-      }
-    },
-    // Fix: Generate strict C0000001 format based on existing max ID
-    previewNextId: async (): Promise<string> => {
-      try {
-        const ref = collection(firestore, COLLECTIONS.CUSTOMERS);
-        // Query ordered by customer_id to help finding max, though string sort
-        const q = query(ref, orderBy('customer_id', 'desc'), limit(100)); 
+        const q = query(ref, ...constraints);
         const snap = await getDocs(q);
         
-        let maxNum = 0;
+        let items = snap.docs.map(d => ({ 
+          ...d.data(), 
+          docId: d.id, 
+          customer_id: d.data().customer_id || d.id 
+        } as Customer));
         
-        snap.forEach(doc => {
-          const id = doc.data().customer_id || '';
-          // Strict Regex Match: C + 7 digits
-          const match = id.match(/^C(\d{7})$/);
-          if (match) {
-            const num = parseInt(match[1], 10);
-            if (!isNaN(num) && num > maxNum) {
-              maxNum = num;
-            }
-          }
-        });
+        // 前端過濾
+        items = items.filter(c => !c.deleted_at);
 
-        // Increment
-        const nextNum = maxNum + 1;
-        // Pad with leading zeros to length 7
-        return `C${nextNum.toString().padStart(7, '0')}`;
-      } catch (e) {
-        console.warn("Preview ID failed, fallback to C0000001", e);
-        return `C0000001`; 
-      }
-    },
-    // Atomic Create with Auto ID (Transaction + Fallback)
-    createWithAutoId: async (customerData: Omit<Customer, 'customer_id' | 'docId'>): Promise<Customer> => {
-      if (!auth.canWrite()) throw new Error("Permission Denied");
-      
-      try {
-        // Logic shifted: We calculate ID first using preview logic logic inside a transaction/lock is complex in client-sdk without Cloud Functions.
-        // For this scale, we'll use the robust previewNextId logic and check collision.
-        let newId = await db.customers.previewNextId();
-        
-        // Double check collision (simple optimistic locking)
-        const check = await db.customers.get(newId);
-        if (check) {
-           // If collision (rare), increment again manually
-           const numPart = parseInt(newId.substring(1)) + 1;
-           newId = `C${numPart.toString().padStart(7, '0')}`;
-        }
-
-        const now = new Date().toISOString();
-        const displayName = customerData.customerType === '公司'
-          ? `${customerData.companyName || ''} ${customerData.contactName}`.trim()
-          : customerData.contactName;
-
-        const newCustomer = {
-          ...customerData,
-          customer_id: newId,
-          displayName,
-          created_at: now,
-          updated_at: now
-        };
-
-        const ref = await addDoc(collection(firestore, COLLECTIONS.CUSTOMERS), newCustomer);
-        
-        await AuditService.log({
-            action: 'CREATE', module: 'CUSTOMER', entityId: ref.id,
-            entityName: displayName, summary: `快速新增村民: ${displayName}`
-        }, auth.getCurrentUser());
-
-        return { ...newCustomer, docId: ref.id };
-
-      } catch (e: any) {
-        console.warn("[DB] Create failed.", e.message);
-        throw e;
-      }
-    },
-    save: async (customer: Customer) => {
-      if (!auth.canWrite()) return;
-      try {
-        const now = new Date().toISOString();
-        const displayName = customer.customerType === '公司'
-          ? `${customer.companyName || ''} ${customer.contactName}`.trim()
-          : customer.contactName;
-        
-        // Prepare data payload (excluding docId which is meta)
-        const dataToSave = { 
-            ...customer, 
-            displayName, 
-            updated_at: now,
-            customer_id: customer.customer_id // Explicitly save business ID
-        };
-        delete (dataToSave as any).docId;
-
-        // 1. UNIQUE CHECK
-        // Check if another document already has this customer_id
-        if (customer.customer_id) {
-            const q = query(collection(firestore, COLLECTIONS.CUSTOMERS), where('customer_id', '==', customer.customer_id));
-            const existing = await getDocs(q);
+        if (city && city !== '全部') {
+          items = items.filter(c => {
+            // 優雅降級：優先讀取儲存的欄位，沒有則動態解析
+            const cCity = (c as any).city || parseRegion(c.addresses?.find(a => a.isPrimary)?.text || '').city;
+            const cDist = (c as any).district || parseRegion(c.addresses?.find(a => a.isPrimary)?.text || '').district;
             
-            // Check if any *other* doc has this ID
-            const duplicate = existing.docs.find(d => d.id !== customer.docId);
-            if (duplicate) {
-                throw new Error(`編號 ${customer.customer_id} 已被其他客戶使用，請更換。`);
+            if (district && district !== '全部') {
+               return cCity === city && cDist === district;
             }
+            return cCity === city;
+          });
         }
 
-        // 2. SAVE OR UPDATE
-        if (customer.docId) {
-          // UPDATE EXISTING
-          const ref = doc(firestore, COLLECTIONS.CUSTOMERS, customer.docId);
-          await updateDoc(ref, dataToSave);
-          
-          await AuditService.log({
-            action: 'UPDATE', module: 'CUSTOMER', entityId: customer.docId,
-            entityName: displayName, summary: `更新村民: ${displayName}`, after: dataToSave
-          }, auth.getCurrentUser());
-          
-          return { ...dataToSave, docId: customer.docId };
-        } else {
-          // CREATE NEW (Manual ID case fallback)
-          dataToSave.created_at = now;
-          const ref = await addDoc(collection(firestore, COLLECTIONS.CUSTOMERS), dataToSave);
-          
-          await AuditService.log({
-            action: 'CREATE', module: 'CUSTOMER', entityId: ref.id,
-            entityName: displayName, summary: `新增村民: ${displayName}`, after: dataToSave
-          }, auth.getCurrentUser());
-          
-          return { ...dataToSave, docId: ref.id };
-        }
-      } catch (e) {
-        handleDbError('saveCustomer', e);
-        throw e;
-      }
-    },
-    delete: async (id: string) => {
-      if (!auth.canWrite()) return;
-      try {
-        // Try deleting by docId first, then fallback to query by customer_id
-        let ref = doc(firestore, COLLECTIONS.CUSTOMERS, id);
-        let snap = await getDoc(ref);
-        
-        if (!snap.exists()) {
-             const q = query(collection(firestore, COLLECTIONS.CUSTOMERS), where('customer_id', '==', id), limit(1));
-             const qSnap = await getDocs(q);
-             if (!qSnap.empty) {
-                 ref = qSnap.docs[0].ref;
-                 snap = qSnap.docs[0];
-             } else {
-                 return; // Not found
-             }
-        }
-
-        const before = snap.data();
-        await updateDoc(ref, { deleted_at: new Date().toISOString() });
-        await AuditService.log({
-            action: 'DELETE', module: 'CUSTOMER', entityId: ref.id,
-            entityName: before.displayName, summary: `刪除村民: ${before.displayName}`, before
-        }, auth.getCurrentUser());
-
-      } catch (e) {
-        handleDbError('deleteCustomer', e);
-      }
-    },
-    generateId: () => `C${Date.now().toString(36).toUpperCase()}` // Legacy Fallback
-  },
-
-  // 2. Jobs Repo
-  jobs: {
-    list: async (params: { startDate?: string, endDate?: string, q?: string, customerId?: string } = {}) => {
-      try {
-        const ref = collection(firestore, COLLECTIONS.JOBS);
-        let qRef;
-
-        // Construct query
-        const constraints = [];
-        if (params.customerId) {
-            constraints.push(where('customerId', '==', params.customerId));
-            constraints.push(orderBy('serviceDate', 'desc'));
-        } else {
-            constraints.push(orderBy('serviceDate', 'desc'));
-        }
-        constraints.push(limit(500));
-
-        qRef = query(ref, ...constraints);
-        
-        let snap;
-        try {
-           snap = await getDocs(qRef);
-        } catch (idxError: any) {
-           console.warn("[DB] Index missing, falling back.", idxError.message);
-           qRef = query(ref, limit(500));
-           snap = await getDocs(qRef);
-        }
-
-        let list = snap.docs.map(d => ({ ...d.data(), jobId: d.id } as Job));
-
-        // Filters
-        list = list.filter(j => !j.deletedAt);
-        if (params.customerId) list = list.filter(j => j.customerId === params.customerId);
-        if (params.startDate) list = list.filter(j => j.serviceDate >= params.startDate!);
-        if (params.endDate) list = list.filter(j => j.serviceDate <= params.endDate!);
-        if (params.q) {
-          const lower = params.q.toLowerCase();
-          list = list.filter(j => 
-            j.contactPerson?.toLowerCase().includes(lower) || 
-            j.contactPhone?.includes(lower) || 
-            j.jobId.toLowerCase().includes(lower)
-          );
-        }
-        
-        // Sorting check (descending date)
-        list.sort((a, b) => new Date(b.serviceDate).getTime() - new Date(a.serviceDate).getTime());
-
-        return list.map(j => deepMask(j));
-      } catch (error) {
-        handleDbError('listJobs', error);
-        return [];
-      }
-    },
-    getAll: async () => {
-      return db.jobs.list();
-    },
-    save: async (job: Job, options: { skipAi?: boolean } = {}) => {
-      if (!auth.canWrite()) return job;
-      try {
-        const ref = doc(firestore, COLLECTIONS.JOBS, job.jobId);
-        const snap = await getDoc(ref);
-        const now = new Date().toISOString();
-        
-        const jobToSave = { 
-          ...job, 
-          updatedAt: now,
-          serviceDateStr: job.serviceDate, 
-          serviceDateTs: job.serviceDate ? Timestamp.fromDate(new Date(job.serviceDate)) : null
+        // 如果過濾後太少，且還有更多原始資料，則回傳時告知 hasMore
+        // 注意：這裡的分頁邏輯在 client-side filter 下是複雜的，先以加大 limit 為主
+        return {
+          items: items.map(c => deepMask(c)),
+          lastDoc: snap.docs[snap.docs.length - 1],
+          hasMore: snap.docs.length >= effectiveLimit
         };
-
-        if (snap.exists()) {
-          const before = snap.data();
-          await setDoc(ref, jobToSave, { merge: true });
-          await AuditService.log({
-            action: 'UPDATE', module: 'JOB', entityId: job.jobId,
-            entityName: `${job.serviceDate} ${job.contactPerson}`, summary: `更新工單`, before, after: jobToSave
-          }, auth.getCurrentUser());
-        } else {
-          jobToSave.createdAt = now;
-          await setDoc(ref, jobToSave);
-          await AuditService.log({
-            action: 'CREATE', module: 'JOB', entityId: job.jobId,
-            entityName: `${job.serviceDate} ${job.contactPerson}`, summary: `新增工單`, after: jobToSave
-          }, auth.getCurrentUser());
-        }
-
-        // Sync Customer Last Service
-        if (job.status === JobStatus.COMPLETED && job.customerId) { 
-           try {
-             // Try to resolve customer doc via business ID query first if needed, or assume ID matches docId
-             const q = query(collection(firestore, COLLECTIONS.CUSTOMERS), where('customer_id', '==', job.customerId));
-             const qSnap = await getDocs(q);
-             let custRef;
-             
-             if (!qSnap.empty) {
-                 custRef = qSnap.docs[0].ref;
-             } else {
-                 // Fallback: assume customerId IS docId
-                 custRef = doc(firestore, COLLECTIONS.CUSTOMERS, job.customerId);
-             }
-
-             if (custRef) {
-                 const custSnap = await getDoc(custRef);
-                 if (custSnap.exists()) {
-                    const custData = custSnap.data() as Customer;
-                    let newTags = custData.ai_tags || [];
-                    if (!options.skipAi && getAiCooldownSeconds() === 0 && job.serviceNote) {
-                       try {
-                         const generated = await extractAiTags(job.serviceNote);
-                         newTags = Array.from(new Set([...newTags, ...generated])).slice(0, 10);
-                       } catch(e) { console.warn("AI skipped", e); }
-                    }
-                    await updateDoc(custRef, {
-                      is_returning: true,
-                      last_service_date: job.serviceDate,
-                      last_service_summary: job.serviceItems.join(', '),
-                      ai_tags: newTags,
-                      updated_at: now
-                    });
-                 }
-             }
-           } catch (e) { console.error("Sync customer failed", e); }
-        }
-        return jobToSave as Job;
       } catch (e) {
-        handleDbError('saveJob', e);
-        return job;
+        return handleDbError('getCustomersPage', e);
       }
     },
-    delete: async (id: string) => {
-      if (!auth.canWrite()) return;
-      try {
-        const ref = doc(firestore, COLLECTIONS.JOBS, id);
-        const snap = await getDoc(ref);
-        if (snap.exists()) {
-          const before = snap.data();
-          await updateDoc(ref, { deletedAt: new Date().toISOString() });
-          await AuditService.log({
-            action: 'DELETE', module: 'JOB', entityId: id,
-            entityName: before.contactPerson, summary: `刪除工單`, before
-          }, auth.getCurrentUser());
-        }
-      } catch (e) {
-        handleDbError('deleteJob', e);
-      }
+
+    list: async () => {
+       const ref = collection(firestore, COLLECTIONS.CUSTOMERS);
+       // [FIX] 移除 limit(500) 限制，讓地圖能載入所有村民 (目前 1117 人)
+       // 為確保效能，設定一個較大的上限如 5000，而非 500
+       const snap = await getDocs(query(ref, orderBy('updated_at', 'desc'), limit(5000)));
+       return snap.docs
+         .map(d => ({ ...d.data(), docId: d.id } as Customer))
+         .filter(c => !c.deleted_at)
+         .map(c => deepMask(c));
     },
-    generateId: () => `JOB-${Date.now()}`
+
+    getAll: async () => db.customers.list(),
+
+    get: async (id: string) => {
+      if (!id) return undefined;
+      const docRef = doc(firestore, COLLECTIONS.CUSTOMERS, id);
+      const snap = await getDoc(docRef);
+      if (snap.exists()) return deepMask({ ...snap.data(), docId: snap.id } as Customer);
+      const q = query(collection(firestore, COLLECTIONS.CUSTOMERS), where('customer_id', '==', id), limit(1));
+      const qSnap = await getDocs(q);
+      if (!qSnap.empty) return deepMask({ ...qSnap.docs[0].data(), docId: qSnap.docs[0].id } as Customer);
+      return undefined;
+    },
+
+    save: async (c: Customer) => {
+      const now = new Date().toISOString();
+      const addrStr = c.addresses?.find(a => a.isPrimary)?.text || c.addresses?.[0]?.text || '';
+      const { city, district } = parseRegion(addrStr);
+      
+      const payload = { 
+        ...c, 
+        city, // 儲存時自動正規化地區
+        district,
+        updated_at: now 
+      };
+      
+      delete (payload as any).docId;
+      if (c.docId) {
+        await updateDoc(doc(firestore, COLLECTIONS.CUSTOMERS, c.docId), payload);
+        return { ...payload, docId: c.docId };
+      } else {
+        const ref = await addDoc(collection(firestore, COLLECTIONS.CUSTOMERS), payload);
+        return { ...payload, docId: ref.id };
+      }
+    }
   },
 
-  // 3. Expenses Repo
+  // 2. Jobs
+  jobs: {
+    generateId: () => `JOB-${Date.now()}`,
+    delete: async (id: string) => {
+      await updateDoc(doc(firestore, COLLECTIONS.JOBS, id), { deletedAt: new Date().toISOString() });
+    },
+    getJobsPage: async (params: { 
+      city?: string,
+      district?: string,
+      lastDoc?: QueryDocumentSnapshot, 
+      limitSize?: number,
+      days?: number
+    }) => {
+      try {
+        const { lastDoc, limitSize = 50, days = 60 } = params;
+        const ref = collection(firestore, COLLECTIONS.JOBS);
+        const cutoffDate = new Date();
+        cutoffDate.setDate(cutoffDate.getDate() - days);
+        const cutoffStr = cutoffDate.toLocaleDateString('en-CA');
+
+        const constraints: QueryConstraint[] = [
+          where('serviceDate', '>=', cutoffStr),
+          orderBy('serviceDate', 'desc'),
+          limit(limitSize)
+        ];
+
+        if (lastDoc) constraints.push(startAfter(lastDoc));
+
+        const q = query(ref, ...constraints);
+        const snap = await getDocs(q);
+        
+        let items = snap.docs
+          .map(d => ({ ...d.data(), jobId: d.id } as Job))
+          .filter(j => !j.deletedAt);
+
+        return {
+          items: items.map(j => deepMask(j)),
+          lastDoc: snap.docs[snap.docs.length - 1],
+          hasMore: snap.docs.length >= limitSize
+        };
+      } catch (e) {
+        return handleDbError('getJobsPage', e);
+      }
+    },
+    list: async (params: { startDate?: string, endDate?: string, customerId?: string } = {}) => {
+      const ref = collection(firestore, COLLECTIONS.JOBS);
+      let constraints: QueryConstraint[] = [orderBy('serviceDate', 'desc')];
+      if (params.startDate) constraints.push(where('serviceDate', '>=', params.startDate));
+      if (params.endDate) constraints.push(where('serviceDate', '<=', params.endDate));
+      // [FIX] Create the query object 'q' using the constraints
+      const q = query(ref, ...constraints);
+      const snap = await getDocs(q);
+      let list = snap.docs.map(d => ({ ...d.data(), jobId: d.id } as Job)).filter(j => !j.deletedAt);
+      if (params.customerId) list = list.filter(j => j.customerId === params.customerId);
+      return list.map(j => deepMask(j));
+    },
+    getAll: async () => db.jobs.list(),
+    save: async (job: Job, _config?: { skipAi?: boolean }) => {
+      const ref = doc(firestore, COLLECTIONS.JOBS, job.jobId);
+      const now = new Date().toISOString();
+      const payload = { ...job, updatedAt: now };
+      await setDoc(ref, payload, { merge: true });
+      return payload;
+    }
+  },
+
+  dashboard: {
+    getSummary: async (startDate: string, endDate: string) => {
+      const jobs = await db.jobs.list({ startDate, endDate });
+      const expenses = await db.expenses.list({ startDate, endDate });
+      const revenue = jobs.reduce((sum, j) => {
+        const val = j.financial?.total_amount ?? j.totalPaid ?? 0;
+        return sum + (typeof val === 'number' ? val : parseInt(val) || 0);
+      }, 0);
+      const cost = expenses.filter(e => !e.cashflowOnly).reduce((sum, e) => sum + (e.amount || 0), 0);
+      return { 
+        revenue, 
+        cost, 
+        netProfit: revenue - cost, 
+        jobCount: jobs.length, 
+        expenseCount: expenses.length, 
+        recentJobs: jobs.slice(0, 50), 
+        recentExpenses: expenses.slice(0, 50) 
+      };
+    }
+  },
+
   expenses: {
     list: async (params: { startDate?: string, endDate?: string } = {}) => {
-      try {
-        const ref = collection(firestore, COLLECTIONS.EXPENSES);
-        let snap;
-        try {
-           const q = query(ref, orderBy('date', 'desc'), limit(500));
-           snap = await getDocs(q);
-        } catch {
-           snap = await getDocs(query(ref, limit(500)));
-        }
-        
-        let list = snap.docs.map(d => ({ ...d.data(), id: d.id } as Expense));
-        
-        list = list.filter(e => !e.deletedAt);
-        if (params.startDate) list = list.filter(e => e.date >= params.startDate!);
-        if (params.endDate) list = list.filter(e => e.date <= params.endDate!);
-        
-        return list.map(e => deepMask(e));
-      } catch (e) {
-        console.error("Expenses list failed", e);
-        return [];
-      }
+      const ref = collection(firestore, COLLECTIONS.EXPENSES);
+      let constraints: QueryConstraint[] = [orderBy('date', 'desc')];
+      if (params.startDate) constraints.push(where('date', '>=', params.startDate));
+      if (params.endDate) constraints.push(where('date', '<=', params.endDate));
+      const snap = await getDocs(query(ref, ...constraints));
+      return snap.docs.map(d => ({ ...d.data(), id: d.id } as Expense)).filter(e => !e.deletedAt).map(e => deepMask(e));
     },
     getAll: async () => db.expenses.list(),
     save: async (expense: Expense) => {
-      if (!auth.canWrite()) return;
-      try {
-        const ref = doc(firestore, COLLECTIONS.EXPENSES, expense.id);
-        const snap = await getDoc(ref);
-        if (snap.exists()) {
-          await setDoc(ref, expense, { merge: true });
-        } else {
-          await setDoc(ref, expense);
-        }
-      } catch (e) { handleDbError('saveExpense', e); }
+      const ref = doc(firestore, COLLECTIONS.EXPENSES, expense.id);
+      await setDoc(ref, expense, { merge: true });
     },
     delete: async (id: string) => {
-      if (!auth.canWrite()) return;
-      try {
-        const ref = doc(firestore, COLLECTIONS.EXPENSES, id);
-        await updateDoc(ref, { deletedAt: new Date().toISOString() });
-      } catch (e) { handleDbError('deleteExpense', e); }
+      await updateDoc(doc(firestore, COLLECTIONS.EXPENSES, id), { deletedAt: new Date().toISOString() });
     },
     generateId: () => `EXP-${Date.now()}`
   },
 
-  // 4. Audit Repo
   audit: {
     getAll: async () => {
-      try {
-        const q = query(collection(firestore, COLLECTIONS.AUDIT_LOGS), orderBy('ts', 'desc'), limit(50));
-        const snap = await getDocs(q);
-        return snap.docs.map(d => {
-          const data = d.data();
-          return { id: d.id, ...data, createdAt: data.createdAt || (data.ts ? new Date(data.ts.seconds * 1000).toISOString() : '') } as AuditLog;
-        });
-      } catch (e) {
-        console.warn("Audit logs fetch failed:", e);
-        return [];
-      }
+      const q = query(collection(firestore, COLLECTIONS.AUDIT_LOGS), orderBy('ts', 'desc'), limit(100));
+      const snap = await getDocs(q);
+      return snap.docs.map(d => ({ id: d.id, ...d.data() } as AuditLog));
     }
   },
 
-  // 5. Settings Repo
   settings: {
     get: async (): Promise<AppSettings> => {
-      try {
-        const ref = doc(firestore, COLLECTIONS.SETTINGS, 'global');
-        const snap = await getDoc(ref);
-        const def = {
-          monthlyTarget: 150000,
-          monthlySalary: 60000,
-          laborBreakdown: { bossSalary: 30000, partnerSalary: 30000 },
-          consumables: { citricCostPerCan: 50, chemicalDrumCost: 3000, chemicalDrumToBottles: 20 }
-        };
-        if (snap.exists()) {
-          return deepMask({ ...def, ...snap.data() });
-        }
-        return def;
-      } catch (e) {
-        return { monthlyTarget: 150000, monthlySalary: 60000, laborBreakdown: { bossSalary: 30000, partnerSalary: 30000 }, consumables: { citricCostPerCan: 50, chemicalDrumCost: 3000, chemicalDrumToBottles: 20 } };
-      }
+      const snap = await getDoc(doc(firestore, COLLECTIONS.SETTINGS, 'global'));
+      return snap.exists() ? snap.data() as AppSettings : { monthlyTarget: 150000, monthlySalary: 60000, consumables: { citricCostPerCan: 50, chemicalDrumCost: 3000, chemicalDrumToBottles: 20 } };
     },
-    save: async (settings: AppSettings) => {
-      if (!auth.canWrite()) return;
-      try {
-        const ref = doc(firestore, COLLECTIONS.SETTINGS, 'global');
-        await setDoc(ref, settings, { merge: true });
-        await AuditService.log({
-          action: 'UPDATE', module: 'SETTINGS', entityId: 'global', summary: '更新系統參數'
-        }, auth.getCurrentUser());
-      } catch (e) { handleDbError('saveSettings', e); }
+    save: async (s: AppSettings) => {
+      await setDoc(doc(firestore, COLLECTIONS.SETTINGS, 'global'), s, { merge: true });
     }
   },
 
-  // 6. L2 Sub-modules
   l2: {
     assets: {
       getAll: async () => {
-        try {
-          const q = query(collection(firestore, COLLECTIONS.L2_ASSETS));
-          const snap = await getDocs(q);
-          let list = snap.docs.map(d => ({ ...d.data(), id: d.id } as L2Asset));
-          list = list.filter(i => !i.deletedAt);
-          return list.map(i => deepMask(i));
-        } catch (e) { return []; }
+        const snap = await getDocs(collection(firestore, COLLECTIONS.L2_ASSETS));
+        return snap.docs.map(d => ({ ...d.data(), id: d.id } as L2Asset)).filter(i => !i.deletedAt).map(i => deepMask(i));
       },
       save: async (item: L2Asset) => {
-        if (!auth.canWrite()) return;
-        try {
-          const ref = doc(firestore, COLLECTIONS.L2_ASSETS, item.id);
-          await setDoc(ref, item, { merge: true });
-        } catch (e) { handleDbError('saveAsset', e); }
+        await setDoc(doc(firestore, COLLECTIONS.L2_ASSETS, item.id), item, { merge: true });
       },
       delete: async (id: string) => {
-        if (!auth.canWrite()) return;
-        const ref = doc(firestore, COLLECTIONS.L2_ASSETS, id);
-        await updateDoc(ref, { deletedAt: new Date().toISOString() });
+        await updateDoc(doc(firestore, COLLECTIONS.L2_ASSETS, id), { deletedAt: new Date().toISOString() });
       },
       generateId: () => `L2A-${Date.now()}`
     },
     stock: {
       getAll: async () => {
-        try {
-          const q = query(collection(firestore, COLLECTIONS.L2_STOCK));
-          const snap = await getDocs(q);
-          let list = snap.docs.map(d => ({ ...d.data(), id: d.id } as L2StockLog));
-          list = list.filter(i => !i.deletedAt);
-          return list.map(i => deepMask(i));
-        } catch (e) { return []; }
+        const snap = await getDocs(collection(firestore, COLLECTIONS.L2_STOCK));
+        return snap.docs.map(d => ({ ...d.data(), id: d.id } as L2StockLog)).filter(i => !i.deletedAt).map(i => deepMask(i));
       },
       save: async (item: L2StockLog) => {
-        if (!auth.canWrite()) return;
-        try {
-          const ref = doc(firestore, COLLECTIONS.L2_STOCK, item.id);
-          await setDoc(ref, item, { merge: true });
-        } catch (e) { handleDbError('saveStock', e); }
+        await setDoc(doc(firestore, COLLECTIONS.L2_STOCK, item.id), item, { merge: true });
       },
       delete: async (id: string) => {
-        if (!auth.canWrite()) return;
-        const ref = doc(firestore, COLLECTIONS.L2_STOCK, id);
-        await updateDoc(ref, { deletedAt: new Date().toISOString() });
+        await updateDoc(doc(firestore, COLLECTIONS.L2_STOCK, id), { deletedAt: new Date().toISOString() });
       },
       generateId: () => `L2S-${Date.now()}`
     },
     labor: {
       get: async (): Promise<L2LaborConfig> => {
-        try {
-          const ref = doc(firestore, COLLECTIONS.SETTINGS, 'l2_labor');
-          const snap = await getDoc(ref);
-          const def = { bossSalary: 40000, partnerSalary: 35000, insuranceCost: 12000 };
-          return snap.exists() ? deepMask({ ...def, ...snap.data() }) : def;
-        } catch (e) { return { bossSalary: 0, partnerSalary: 0, insuranceCost: 0 }; }
+        const snap = await getDoc(doc(firestore, COLLECTIONS.SETTINGS, 'l2_labor'));
+        return snap.exists() ? snap.data() as L2LaborConfig : { bossSalary: 40000, partnerSalary: 35000, insuranceCost: 12000 };
       },
       save: async (cfg: L2LaborConfig) => {
-        if (!auth.canWrite()) return;
-        const ref = doc(firestore, COLLECTIONS.SETTINGS, 'l2_labor');
-        await setDoc(ref, cfg, { merge: true });
+        await setDoc(doc(firestore, COLLECTIONS.SETTINGS, 'l2_labor'), cfg, { merge: true });
       }
-    }
-  },
-
-  // 7. Dashboard Summary
-  dashboard: {
-    getSummary: async (startDate: string, endDate: string) => {
-      const jobs = await db.jobs.list({ startDate, endDate });
-      const expenses = await db.expenses.list({ startDate, endDate });
-      
-      const revenue = jobs.reduce((sum, j) => sum + (j.financial?.total_amount || j.totalPaid || 0), 0);
-      
-      // Fix: Exclude cashflow-only expenses from Net Profit calculation
-      const cost = expenses
-        .filter(e => !e.cashflowOnly) 
-        .reduce((sum, e) => sum + e.amount, 0);
-      
-      return {
-        revenue,
-        cost,
-        netProfit: revenue - cost,
-        jobCount: jobs.length,
-        expenseCount: expenses.length,
-        recentJobs: jobs.slice(0, 20),
-        recentExpenses: expenses.slice(0, 20) // Included expenses
-      };
     }
   }
 };

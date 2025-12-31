@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
 
 let lastQuotaExceededTimestamp = 0;
@@ -15,26 +16,26 @@ export const getAiCooldownSeconds = (): number => {
 };
 
 export const checkApiHealth = async (): Promise<{ status: 'ok' | 'quota_low' | 'error', message: string }> => {
-  // Fix: The API key must be obtained exclusively from the environment variable process.env.API_KEY
+  // [FIX] The API key must be obtained exclusively from the environment variable process.env.API_KEY
   const apiKey = process.env.API_KEY;
   if (!apiKey) {
     return { status: 'error', message: 'API 金鑰未配置。' };
   }
 
   try {
-    // Fix: Use process.env.API_KEY directly when initializing the GoogleGenAI client instance
+    // [FIX] Use process.env.API_KEY directly when initializing the GoogleGenAI client instance
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: "ping",
       config: {
         maxOutputTokens: 5,
-        // Fix: Set both maxOutputTokens and thinkingBudget to ensure thinking doesn't consume all tokens
+        // [FIX] Set both maxOutputTokens and thinkingBudget to ensure thinking doesn't consume all tokens
         thinkingConfig: { thinkingBudget: 0 }
       }
     });
     
-    // Fix: Access response.text directly as a property (not a method)
+    // [FIX] Access response.text directly as a property (not a method)
     if (response.text) {
       return { status: 'ok', message: '連線正常，AI 引擎待命中心！' };
     }
@@ -59,7 +60,7 @@ export const checkApiHealth = async (): Promise<{ status: 'ok' | 'quota_low' | '
 export const extractAiTags = async (notes: string, maxRetries = 1): Promise<string[]> => {
   if (!notes.trim()) return [];
 
-  // Fix: The API key must be obtained exclusively from process.env.API_KEY
+  // [FIX] The API key must be obtained exclusively from process.env.API_KEY
   if (!process.env.API_KEY) {
     console.warn("AI Tagging skipped: No API Key");
     return [];
@@ -74,7 +75,7 @@ export const extractAiTags = async (notes: string, maxRetries = 1): Promise<stri
   
   const runExtraction = async (): Promise<string[]> => {
     try {
-      // Fix: Instantiate GoogleGenAI right before the call to ensure it uses the current process.env.API_KEY
+      // [FIX] Instantiate GoogleGenAI right before the call to ensure it uses the current process.env.API_KEY
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
@@ -88,7 +89,7 @@ export const extractAiTags = async (notes: string, maxRetries = 1): Promise<stri
         }
       });
       
-      // Fix: response.text is a property, not a method
+      // [FIX] response.text is a property, not a method
       const text = response.text?.trim();
       return text ? JSON.parse(text) : [];
     } catch (error: any) {
