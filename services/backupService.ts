@@ -24,15 +24,22 @@ export interface BackupLog {
 }
 
 /**
- * Deeply sanitizes an object to remove circular references and complex SDK internals.
- * Then flattens it to a format suitable for JSON payload.
+ * 深度脫敏物件，確保沒有循環引用與複雜的 SDK 內部物件
  */
 const prepareForBackup = (obj: any, seen = new WeakSet()): any => {
   if (obj === null || obj === undefined) return '';
   if (typeof obj !== 'object') return obj;
 
   if (seen.has(obj)) return '[Circular]';
-  seen.add(obj);
+  
+  // 檢查是否為 Firebase SDK 內部類別
+  if (
+    obj.constructor?.name?.startsWith('Q') || 
+    obj.constructor?.name === 'Sa' ||
+    obj._database || obj.firestore || obj._path
+  ) {
+    return `[Ref:${obj.path || 'internal'}]`;
+  }
 
   // Firestore Timestamp
   if (typeof obj.seconds === 'number' && typeof obj.nanoseconds === 'number') {
@@ -42,10 +49,7 @@ const prepareForBackup = (obj: any, seen = new WeakSet()): any => {
   // Date
   if (obj instanceof Date) return obj.toISOString();
 
-  // SDK Internals pattern check
-  if (obj.firestore || obj._database || obj._path || obj._firestore) {
-    return `Ref(${obj.path || 'internal'})`;
-  }
+  seen.add(obj);
 
   if (Array.isArray(obj)) {
     return obj.map(item => prepareForBackup(item, seen));
@@ -54,15 +58,10 @@ const prepareForBackup = (obj: any, seen = new WeakSet()): any => {
   const result: Record<string, any> = {};
   try {
     Object.keys(obj).forEach(key => {
-      if (key.startsWith('_')) return; // Skip internals
+      if (key.startsWith('_')) return; // 跳過私有成員
       const val = obj[key];
-      if (val !== null && typeof val === 'object') {
-        const cleaned = prepareForBackup(val, seen);
-        // For backup flattening, nested objects are stringified for sheet compatibility
-        result[key] = (typeof cleaned === 'object') ? JSON.stringify(cleaned) : cleaned;
-      } else {
-        result[key] = val;
-      }
+      // 遞迴清理，但不進行 stringify，交由最後 fetch 時的 body 處理
+      result[key] = prepareForBackup(val, seen);
     });
   } catch (e) {
     return '[Complex Data]';
@@ -98,7 +97,7 @@ export const BackupService = {
     const MAX_RETRIES = 3;
     const url = `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}t=${Date.now()}`;
     
-    // Deeply sanitize each item before building the payload
+    // 清理 Data
     const sanitizedData = data.map(item => prepareForBackup(item, new WeakSet()));
     
     const payload = {
@@ -114,7 +113,7 @@ export const BackupService = {
         credentials: 'omit', 
         redirect: 'follow',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload) // 這裡的序列化現在是安全的
       });
       if (!response.ok) {
         const text = await response.text();

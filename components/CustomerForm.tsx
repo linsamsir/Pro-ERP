@@ -3,7 +3,7 @@ import React from 'react';
 import { Customer, Preference, BuildingType, PhoneRecord, CustomerSource, SocialAccount, AvatarType } from '../types';
 import { db } from '../services/db';
 import { auth } from '../services/auth';
-import { Save, X, Plus, Trash2, User, Phone, MapPin, Share2, Search, Smile, Lock, Wand2 } from 'lucide-react';
+import { Save, X, Plus, Trash2, User, Phone, MapPin, Share2, Search, Smile, Lock, Wand2, Loader2 } from 'lucide-react';
 
 interface CustomerFormProps {
   initialData?: Partial<Customer>;
@@ -13,9 +13,8 @@ interface CustomerFormProps {
 }
 
 const CustomerForm: React.FC<CustomerFormProps> = ({ initialData, onCancel, onSave, mode = 'page' }) => {
-  const isEditing = !!initialData?.docId; // Use docId to check if editing
+  const isEditing = !!initialData?.docId;
   
-  // --- Local State ---
   const [c, setC] = React.useState<Partial<Customer>>({
     customerType: '個人',
     contactName: '',
@@ -33,10 +32,12 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ initialData, onCancel, onSa
     avatar: 'man',
     socialAccounts: [],
     interactionStatus: 'normal',
+    customer_id: '',
     ...initialData
   });
 
-  // Source & Referral Logic State
+  const [idLoading, setIdLoading] = React.useState(false);
+  const [isSaving, setIsSaving] = React.useState(false);
   const [referrerSearch, setReferrerSearch] = React.useState('');
   const [showReferrerInput, setShowReferrerInput] = React.useState(false);
   const [referrerQuickName, setReferrerQuickName] = React.useState('');
@@ -51,7 +52,6 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ initialData, onCancel, onSa
     loadCustomers();
   }, []);
 
-  // --- Helpers ---
   const update = (u: Partial<Customer>) => setC(prev => ({ ...prev, ...u }));
   
   const updatePhone = (index: number, field: keyof PhoneRecord, value: any) => {
@@ -70,7 +70,6 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ initialData, onCancel, onSa
     update({ phones: (c.phones || []).filter((_, i) => i !== index) });
   };
 
-  // Social Accounts Helpers
   const addSocial = () => {
     update({ socialAccounts: [...(c.socialAccounts || []), { platform: 'LINE', displayName: '' }] });
   };
@@ -96,8 +95,6 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ initialData, onCancel, onSa
 
   const handleQuickReferrerAdd = async () => {
     if (!referrerQuickName || !referrerQuickPhone) return alert('請輸入介紹人姓名與電話');
-    
-    // Quick Add must also use atomic ID
     const newRef = await db.customers.createWithAutoId({
         customerType: '個人',
         contactName: referrerQuickName,
@@ -114,23 +111,32 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ initialData, onCancel, onSa
         socialAccounts: [],
         preference: Preference.PHONE
     });
-    
     setAllCustomers(prev => [...prev, newRef]);
     handleReferrerSelect(newRef.customer_id, referrerQuickName);
     setShowReferrerInput(false);
   };
 
   const handleAutoGenerateId = async () => {
-    const nextId = await db.customers.previewNextId();
-    update({ customer_id: nextId });
+    setIdLoading(true);
+    try {
+        const nextId = await db.customers.previewNextId();
+        update({ customer_id: nextId });
+    } catch (e) {
+        console.error("Manual ID Gen Error:", e);
+        alert("無法計算編號，請手動輸入");
+    } finally {
+        setIdLoading(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSaving) return;
     
     if (!c.contactName) return alert("請輸入聯絡人姓名！");
     if (!c.phones?.[0]?.number) return alert("請至少輸入一組主要電話！");
 
+    setIsSaving(true);
     let displayName = c.contactName;
     if (c.customerType === '公司' && c.companyName) {
       displayName = `${c.companyName} ${c.contactName}`;
@@ -143,28 +149,31 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ initialData, onCancel, onSa
     };
 
     try {
+        let savedCustomer: Customer;
         if (c.docId) {
-           // Update Existing via Doc ID
-           await db.customers.save(payload);
-           onSave(payload as Customer);
+           savedCustomer = await db.customers.save(payload);
         } else {
-           // Create New
-           if (c.customer_id) {
-             // Manual ID provided
-             await db.customers.save(payload as Customer);
-             onSave(payload as Customer);
+           // 如果使用者沒輸入編號，這裡會進入 createWithAutoId 自動排號
+           if (c.customer_id && c.customer_id.trim() !== '') {
+             savedCustomer = await db.customers.save(payload as Customer);
            } else {
-             // Fully Auto
-             const newCustomer = await db.customers.createWithAutoId(payload);
-             onSave(newCustomer);
+             savedCustomer = await db.customers.createWithAutoId(payload);
            }
         }
+        
+        // 重要：傳遞給父組件的必須是含有 customer_id 的對象
+        if (!savedCustomer.customer_id) {
+           throw new Error("編號產生失敗，請手動輸入");
+        }
+        
+        onSave(savedCustomer);
     } catch (e: any) {
         alert(e.message || "儲存失敗");
+    } finally {
+        setIsSaving(false);
     }
   };
 
-  // Avatar Options
   const avatars: { id: AvatarType, icon: string, bg: string }[] = [
     { id: 'man', icon: '👨', bg: 'bg-blue-100' },
     { id: 'woman', icon: '👩', bg: 'bg-pink-100' },
@@ -184,7 +193,6 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ initialData, onCancel, onSa
     <div className={mode === 'modal' ? "fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-pop" : ""}>
       <div className={`bg-[#fffbf0] w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-[2rem] border-8 border-white shadow-2xl ${mode === 'page' ? 'mx-auto' : ''}`}>
         
-        {/* Header */}
         <div className="sticky top-0 bg-[#fffbf0]/95 backdrop-blur-sm p-6 border-b-2 border-[#e8dcb9] flex justify-between items-center z-10">
           <div>
             <h2 className="text-h2 text-[#5d4a36]">{isEditing ? '編輯村民' : '新增村民'}</h2>
@@ -196,28 +204,27 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ initialData, onCancel, onSa
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
-          
-          {/* ID field - Editable with Suggest Button (Requirement B4) */}
           <div className="bg-slate-100 p-3 rounded-xl border border-slate-200 flex items-center justify-between">
              <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mr-2 shrink-0">Customer ID</div>
              <div className="flex flex-1 items-center gap-2">
                 <input 
                   className="bg-white border border-slate-300 rounded px-2 py-1 font-mono font-black text-[#5d4a36] w-full text-right outline-none focus:border-[#78b833]"
-                  placeholder="系統自動生成"
+                  placeholder="C0000000"
                   value={c.customer_id || ''}
                   onChange={e => update({ customer_id: e.target.value })}
                 />
                 <button 
                   type="button" 
+                  disabled={idLoading}
                   onClick={handleAutoGenerateId}
-                  className="bg-[#78b833] text-white px-3 py-1 rounded text-xs font-bold flex items-center gap-1 hover:bg-[#5a8d26] shrink-0"
+                  className="bg-[#78b833] text-white px-3 py-1 rounded text-xs font-bold flex items-center gap-1 hover:bg-[#5a8d26] shrink-0 disabled:opacity-50"
                 >
-                  <Wand2 size={12}/> 插入建議編號
+                  {idLoading ? <Loader2 size={12} className="animate-spin"/> : <Wand2 size={12}/>}
+                  {idLoading ? '核對中' : '插入建議編號'}
                 </button>
              </div>
           </div>
 
-          {/* Avatar Selection */}
           <div className="ac-card bg-white">
             <label className="text-note mb-3 block flex items-center gap-1"><Smile size={16}/> 選擇頭像</label>
             <div className="flex gap-4 overflow-x-auto pb-2">
@@ -234,7 +241,6 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ initialData, onCancel, onSa
             </div>
           </div>
 
-          {/* A. Type Toggle */}
           <div className="bg-white p-2 rounded-2xl border-2 border-[#e8dcb9] flex">
              {['個人', '公司'].map(type => (
                <button
@@ -248,7 +254,6 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ initialData, onCancel, onSa
              ))}
           </div>
 
-          {/* Core Info */}
           <div className="space-y-4">
             {c.customerType === '公司' && (
               <div className="animate-pop">
@@ -277,7 +282,6 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ initialData, onCancel, onSa
             </div>
           </div>
 
-          {/* B. Phones */}
           <div className="ac-card bg-white space-y-4">
              <label className="text-note block flex justify-between">
                 <span>聯絡電話 <span className="text-red-400">*</span></span>
@@ -309,7 +313,6 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ initialData, onCancel, onSa
              ))}
           </div>
 
-          {/* Social Accounts */}
           <div className="ac-card bg-white space-y-4">
              <label className="text-note block flex justify-between">
                 <span>社群帳號</span>
@@ -333,31 +336,10 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ initialData, onCancel, onSa
                    />
                    <button type="button" onClick={() => removeSocial(idx)} className="text-red-300 hover:text-red-500 px-2"><Trash2 size={18}/></button>
                  </div>
-                 {acc.platform === 'LINE' && (
-                    <div className="flex items-center gap-2 mt-1">
-                      <span className="text-xs text-slate-400 font-bold">LINE 類型:</span>
-                      <div className="flex gap-2 flex-1 overflow-x-auto">
-                        {['官方帳號', '公司手機', '闆娘手機', '老闆手機'].map(t => (
-                          <button 
-                            key={t}
-                            type="button" 
-                            onClick={() => updateSocial(idx, 'lineChannelType', t)}
-                            className={`px-3 py-1 rounded-lg text-xs font-bold border whitespace-nowrap transition-colors ${acc.lineChannelType === t ? 'bg-[#06C755] text-white border-[#06C755]' : 'bg-white text-slate-500'}`}
-                          >
-                            {t}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                 )}
                </div>
              ))}
-             {(!c.socialAccounts || c.socialAccounts.length === 0) && (
-               <div className="text-center py-4 text-sm text-slate-300 italic bg-slate-50 rounded-xl">點擊上方新增，紀錄客人的 LINE/FB</div>
-             )}
           </div>
 
-          {/* C. Building Info */}
           <div className="ac-card bg-white space-y-5">
              <div>
                 <label className="text-note ml-1 mb-1 block">地址</label>
@@ -366,55 +348,33 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ initialData, onCancel, onSa
                    <input className="input-nook pl-12 py-3" placeholder="完整地址..." value={c.addresses?.[0]?.text} onChange={e => update({ addresses: [{ text: e.target.value, isPrimary: true }] })} />
                 </div>
              </div>
-             
              <div>
                <label className="text-note ml-1 mb-2 block">建物類型</label>
                <div className="flex flex-wrap gap-3">
                  {Object.values(BuildingType).map(type => (
-                   <button
-                     key={type}
-                     type="button"
-                     onClick={() => update({ building_type: type })}
-                     className={`btn-option ${c.building_type === type ? 'active' : 'inactive'}`}
-                   >
-                     {type}
-                   </button>
+                   <button key={type} type="button" onClick={() => update({ building_type: type })} className={`btn-option ${c.building_type === type ? 'active' : 'inactive'}`}>{type}</button>
                  ))}
                </div>
              </div>
-
              {isBuildingComplex && (
                <div className="animate-pop">
                  <label className="text-note ml-1 mb-1 block">社區/大樓名稱</label>
                  <input className="input-nook bg-orange-50/50 py-3" placeholder="例如: 遠雄未來城" value={c.building_name} onChange={e => update({ building_name: e.target.value })} />
                </div>
              )}
-
              <div className="flex items-center gap-3 pt-2">
                 <input type="checkbox" id="elevator" className="w-5 h-5 accent-[#78b833]" checked={c.has_elevator} onChange={e => update({ has_elevator: e.target.checked })} />
                 <label htmlFor="elevator" className="text-body font-bold text-[#5d4a36]">這棟有電梯</label>
              </div>
           </div>
 
-          {/* D. Source (Referral/Social) */}
           <div className="bg-[#f0f9ff] p-6 rounded-3xl border-2 border-blue-100 space-y-4">
              <label className="text-note text-blue-400 ml-1 block flex items-center gap-1"><Share2 size={16} /> 客戶來源</label>
-             
              <div className="flex gap-2 bg-white p-1.5 rounded-2xl border border-blue-100">
                {['電話', '社群', '介紹', '其他'].map(src => (
-                 <button
-                   key={src}
-                   type="button"
-                   onClick={() => updateSource({ channel: src as any })}
-                   className={`flex-1 py-3 rounded-xl text-sm font-black transition-all ${c.source?.channel === src ? 'bg-blue-500 text-white shadow-sm' : 'text-blue-300 hover:bg-blue-50'}`}
-                   title={src}
-                 >
-                   {src}
-                 </button>
+                 <button key={src} type="button" onClick={() => updateSource({ channel: src as any })} className={`flex-1 py-3 rounded-xl text-sm font-black transition-all ${c.source?.channel === src ? 'bg-blue-500 text-white shadow-sm' : 'text-blue-300 hover:bg-blue-50'}`}>{src}</button>
                ))}
              </div>
-
-             {/* Referral Detail */}
              {c.source?.channel === '介紹' && (
                <div className="space-y-3 bg-white p-4 rounded-2xl animate-pop relative shadow-sm">
                   {c.source.referrerCustomerId ? (
@@ -426,51 +386,33 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ initialData, onCancel, onSa
                     <>
                       <div className="relative">
                         <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" />
-                        <input 
-                          className="input-nook pl-10 py-3 text-sm" 
-                          placeholder="搜尋介紹人(電話/姓名)..."
-                          value={referrerSearch}
-                          onChange={e => setReferrerSearch(e.target.value)}
-                        />
+                        <input className="input-nook pl-10 py-3 text-sm" placeholder="搜尋介紹人..." value={referrerSearch} onChange={e => setReferrerSearch(e.target.value)} />
                       </div>
-                      
-                      {/* Search Results */}
                       {referrerSearch && (
                         <div className="max-h-40 overflow-y-auto border rounded-xl divide-y">
                            {allCustomers.filter(cust => cust.displayName.includes(referrerSearch) || cust.phones.some(p => p.number.includes(referrerSearch))).map(match => (
-                             <button key={match.customer_id} type="button" onClick={() => handleReferrerSelect(match.customer_id, match.displayName)} className="w-full text-left px-4 py-3 text-sm hover:bg-slate-50 transition-colors">
+                             <button key={match.customer_id} type="button" onClick={() => handleReferrerSelect(match.customer_id, match.displayName)} className="w-full text-left px-4 py-3 text-sm hover:bg-slate-50">
                                <span className="font-bold text-[#5d4a36] text-base">{match.displayName}</span>
                                <span className="text-xs text-slate-400 ml-2">{match.phones[0]?.number}</span>
                              </button>
                            ))}
-                           <button type="button" onClick={() => setShowReferrerInput(true)} className="w-full text-center py-3 text-sm font-bold text-orange-500 hover:bg-orange-50 transition-colors">
-                             找不到？快速新增介紹人
-                           </button>
+                           <button type="button" onClick={() => setShowReferrerInput(true)} className="w-full text-center py-3 text-sm font-bold text-orange-500 hover:bg-orange-50">找不到？快速新增介紹人</button>
                         </div>
                       )}
                     </>
-                  )}
-
-                  {/* Quick Add Referrer Modal (Inner) */}
-                  {showReferrerInput && !c.source.referrerCustomerId && (
-                    <div className="p-4 bg-orange-50 rounded-xl border border-orange-200 space-y-3">
-                       <p className="text-sm font-bold text-orange-700">快速建立介紹人</p>
-                       <input className="w-full p-2.5 rounded-lg border border-orange-200 text-sm font-bold" placeholder="姓名" value={referrerQuickName} onChange={e => setReferrerQuickName(e.target.value)} />
-                       <input className="w-full p-2.5 rounded-lg border border-orange-200 text-sm font-bold" placeholder="電話" value={referrerQuickPhone} onChange={e => setReferrerQuickPhone(e.target.value)} />
-                       <div className="flex gap-3">
-                         <button type="button" onClick={() => setShowReferrerInput(false)} className="flex-1 py-2 bg-white border rounded-lg text-sm font-bold text-slate-500">取消</button>
-                         <button type="button" onClick={handleQuickReferrerAdd} className="flex-1 py-2 bg-orange-400 text-white rounded-lg text-sm font-bold shadow-sm">建立並綁定</button>
-                       </div>
-                    </div>
                   )}
                </div>
              )}
           </div>
 
-          <button type="submit" className="w-full btn-primary text-xl py-5 rounded-2xl shadow-xl">
-             <Save size={24} /> ✨ 完成並開始任務
+          <button 
+            type="submit" 
+            disabled={isSaving}
+            className="w-full btn-primary text-xl py-5 rounded-2xl shadow-xl disabled:opacity-50"
+          >
+             {isSaving ? <Loader2 className="animate-spin"/> : <Save size={24} />} 
+             {isSaving ? '正在辦理入村...' : ' ✨ 完成並開始任務'}
           </button>
-
         </form>
       </div>
     </div>

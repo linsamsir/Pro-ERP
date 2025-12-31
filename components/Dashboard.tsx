@@ -3,7 +3,7 @@ import React from 'react';
 import { db } from '../services/db';
 import { Customer } from '../types';
 import { auth } from '../services/auth';
-import { Map, MapPin, Users, ChevronRight, Loader2 } from 'lucide-react';
+import { Map, MapPin, Users, ChevronRight, Loader2, AlertCircle } from 'lucide-react';
 import CustomerDetailModal from './CustomerDetailModal';
 import { TAIWAN_TERRITORY, parseRegion, CityName } from '../data/territory';
 
@@ -19,62 +19,67 @@ const Dashboard: React.FC = () => {
   const [selectedDistrict, setSelectedDistrict] = React.useState<DistrictStat | null>(null);
   const [totalCustomers, setTotalCustomers] = React.useState(0);
   const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
   
   const [viewingCustomerId, setViewingCustomerId] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     const loadData = async () => {
         setLoading(true);
-        // 1. 取得精確總數
-        const count = await db.customers.getTotalCount();
-        setTotalCustomers(count);
+        setError(null);
+        try {
+            // 1. 取得精確總數 (有容錯機制)
+            const count = await db.customers.getTotalCount();
+            setTotalCustomers(count);
 
-        // 2. 取得全體資料 (已在 db.ts 移除 500 限制)
-        const all = await db.customers.getAll();
-        
-        const grouped: Record<string, Record<string, Customer[]>> = {
-            '高雄市': {}, '台南市': {}, '屏東縣': {}, '其他': {}
-        };
-
-        // 初始化結構
-        Object.entries(TAIWAN_TERRITORY).forEach(([city, districts]) => {
-            districts.forEach(d => { grouped[city][d] = []; });
-        });
-
-        all.forEach(c => {
-            // 優先使用儲存的 city/district 欄位，若無則解析地址
-            const cCity = (c as any).city || parseRegion(c.addresses.find(a => a.isPrimary)?.text || c.addresses[0]?.text || '').city;
-            const cDist = (c as any).district || parseRegion(c.addresses.find(a => a.isPrimary)?.text || c.addresses[0]?.text || '').district;
+            // 2. 取得全體資料
+            const all = await db.customers.getAll();
             
-            const targetCity = grouped[cCity] ? cCity : '其他';
-            if (!grouped[targetCity][cDist]) {
-                grouped[targetCity][cDist] = [];
+            const grouped: Record<string, Record<string, Customer[]>> = {
+                '高雄市': {}, '台南市': {}, '屏東縣': {}, '其他': {}
+            };
+
+            // 初始化結構
+            Object.entries(TAIWAN_TERRITORY).forEach(([city, districts]) => {
+                districts.forEach(d => { grouped[city][d] = []; });
+            });
+
+            all.forEach(c => {
+                const cCity = (c as any).city || parseRegion(c.addresses.find(a => a.isPrimary)?.text || c.addresses[0]?.text || '').city;
+                const cDist = (c as any).district || parseRegion(c.addresses.find(a => a.isPrimary)?.text || c.addresses[0]?.text || '').district;
+                
+                const targetCity = grouped[cCity] ? cCity : '其他';
+                if (!grouped[targetCity][cDist]) {
+                    grouped[targetCity][cDist] = [];
+                }
+                grouped[targetCity][cDist].push(c);
+            });
+
+            const finalMap: Record<string, DistrictStat[]> = {};
+            Object.keys(grouped).forEach(city => {
+                finalMap[city] = Object.keys(grouped[city]).map(dist => ({
+                    name: dist,
+                    count: grouped[city][dist].length,
+                    customers: grouped[city][dist]
+                })).sort((a, b) => b.count - a.count);
+            });
+
+            setMapData(finalMap);
+            
+            if (finalMap[activeCity]?.length > 0) {
+                const firstWithPeople = finalMap[activeCity].find(d => d.count > 0) || finalMap[activeCity][0];
+                setSelectedDistrict(firstWithPeople);
             }
-            grouped[targetCity][cDist].push(c);
-        });
-
-        const finalMap: Record<string, DistrictStat[]> = {};
-        Object.keys(grouped).forEach(city => {
-            finalMap[city] = Object.keys(grouped[city]).map(dist => ({
-                name: dist,
-                count: grouped[city][dist].length,
-                customers: grouped[city][dist]
-            })).sort((a, b) => b.count - a.count);
-        });
-
-        setMapData(finalMap);
-        
-        // 預設選取當前城市中有人的第一個行政區
-        if (finalMap[activeCity]?.length > 0) {
-            const firstWithPeople = finalMap[activeCity].find(d => d.count > 0) || finalMap[activeCity][0];
-            setSelectedDistrict(firstWithPeople);
+        } catch (err: any) {
+            console.error("Dashboard data load error:", err);
+            setError(err.message || "資料讀取失敗，請檢查網路或權限。");
+        } finally {
+            setLoading(false);
         }
-        setLoading(false);
     };
     loadData();
   }, []);
 
-  // 當切換城市時，也更新選取的行政區
   React.useEffect(() => {
     if (mapData[activeCity]) {
        const firstWithPeople = mapData[activeCity].find(d => d.count > 0) || mapData[activeCity][0];
@@ -98,7 +103,16 @@ const Dashboard: React.FC = () => {
   if (loading) return (
     <div className="h-full flex flex-col items-center justify-center p-20 text-wood-brown">
         <Loader2 className="animate-spin mb-4" size={48}/>
-        <p className="font-black">繪製領地地圖中 (目前 {totalCustomers} 人)...</p>
+        <p className="font-black">繪製領地地圖中...</p>
+    </div>
+  );
+
+  if (error) return (
+    <div className="h-full flex flex-col items-center justify-center p-20 text-red-500 max-w-md mx-auto text-center">
+        <AlertCircle size={64} className="mb-4 opacity-20"/>
+        <h2 className="text-2xl font-black mb-2">領地情報載入失敗</h2>
+        <p className="text-slate-500 font-bold mb-6">{error}</p>
+        <button onClick={() => window.location.reload()} className="btn-primary">重新整理</button>
     </div>
   );
 
